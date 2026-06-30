@@ -175,7 +175,7 @@
     <h2 id="toggleForm">+ Log a new handover <span class="chev" id="chev">▲ hide</span></h2>
     <div id="formWrap">
       <div class="form-grid">
-        <div class="field"><label>Your reference</label><input type="text" id="f_ownref" placeholder="Your job / FMS ref"></div>
+        <div class="field"><label>Your reference <span style="color:#c00000">*</span></label><input type="text" id="f_ownref" placeholder="Required — your job / FMS ref"></div>
         <div class="field"><label>Date received</label><input type="date" id="f_date"></div>
         <div class="field col2"><label>Customer</label><input type="text" id="f_customer" list="customerList" placeholder="Customer name — past ones suggested"></div>
 
@@ -185,8 +185,8 @@
         <div class="field"><label>Status</label><select id="f_status"><option>New</option><option>Assigned</option><option>Booked</option><option>In Transit</option><option>Completed</option><option>On HOLD</option></select></div>
 
         <div class="field col2"><label>Shipment description</label><input type="text" id="f_desc" placeholder="What is it?"></div>
-        <div class="field"><label>Origin</label><input type="text" id="f_origin"></div>
-        <div class="field"><label>Destination</label><input type="text" id="f_dest"></div>
+        <div class="field"><label>Origin (country)</label><input type="text" id="f_origin" list="countryList" placeholder="Type code or country"></div>
+        <div class="field"><label>Destination (country)</label><input type="text" id="f_dest" list="countryList" placeholder="Type code or country"></div>
 
         <div class="field"><label>OPS owner (operator)</label><select id="f_owner"></select></div>
         <div class="field"><label>Target / ETD</label><input type="date" id="f_eta"></div>
@@ -219,7 +219,7 @@
   <div class="tablecard">
     <table>
       <thead><tr>
-        <th>Ref</th><th>Your ref</th><th>Received</th><th>Customer</th><th>Mode</th>
+        <th>Ref</th><th>Received</th><th>Customer</th><th>Sales</th><th>Mode</th>
         <th>Description</th><th>Route</th><th>OPS owner</th><th>Status</th><th>Tasks</th><th>Comments</th><th>Target</th><th></th>
       </tr></thead>
       <tbody id="rows"></tbody>
@@ -281,6 +281,7 @@
 
 <datalist id="ownerList"></datalist>
 <datalist id="customerList"></datalist>
+<datalist id="countryList"></datalist>
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -311,6 +312,17 @@ var STATUS_CLR={
   "Completed":["var(--done)","var(--done-t)"],"On HOLD":["var(--hold)","var(--hold-t)"]
 };
 
+
+var COUNTRIES=[["AFG", "Afghanistan"], ["ALB", "Albania"], ["DZA", "Algeria"], ["ASM", "American Samoa"], ["AND", "Andorra"], ["AGO", "Angola"], ["AIA", "Anguilla"], ["ATA", "Antarctica"], ["ATG", "Antigua and Barbuda"], ["ARG", "Argentina"], ["ARM", "Armenia"], ["ABW", "Aruba"], ["AUS", "Australia"], ["AUT", "Austria"], ["AZE", "Azerbaijan"], ["BHS", "Bahamas"], ["BHR", "Bahrain"], ["BGD", "Bangladesh"], ["BRB", "Barbados"], ["BLR", "Belarus"], ["BEL", "Belgium"], ["BLZ", "Belize"], ["BEN", "Benin"], ["BMU", "Bermuda"], ["BTN", "Bhutan"], ["BOL", "Bolivia"], ["BES", "Bonaire, Sint Eustatius and Saba"], ["BIH", "Bosnia and Herzegovina"], ["BWA", "Botswana"], ["BVT", "Bouvet Island"], ["BRA", "Brazil"], ["IOT", "British Indian Ocean Territory"], ["BRN", "Brunei Darussalam"], ["BGR", "Bulgaria"], ["BFA", "Burkina Faso"], ["BDI", "Burundi"], ["CPV", "Cabo Verde"], ["KHM", "Cambodia"], ["CMR", "Cameroon"], ["CAN", "Canada"], ["CYM", "Cayman Islands"], ["CAF", "Central African Republic"], ["TCD", "Chad"], ["CHL", "Chile"], ["CHN", "China"], ["CXR", "Christmas Island"], ["CCK", "Cocos (Keeling) Islands"], ["COL", "Colombia"], ["COM", "Comoros"], ["COG", "Congo"], ["COD", "Congo, The Democratic Republic of the"], ["COK", "Cook Islands"], ["CRI", "Costa Rica"], ["HRV", "Croatia"], ["CUB", "Cuba"], ["CUW", "Curaçao"], ["CYP", "Cyprus"], ["CZE", "Czechia"], ["CIV", "Côte d'Ivoire"], ["DNK", "Denmark"], ["DJI", "Djibouti"], ["DMA", "Dominica"], ["DOM", "Dominican Republic"], ["ECU", "Ecuador"], ["EGY", "Egypt"], ["SLV", "El Salvador"], ["GNQ", "Equatorial Guinea"], ["ERI", "Eritrea"], ["EST", "Estonia"], ["SWZ", "Eswatini"], ["ETH", "Ethiopia"], ["FLK", "Falkland Islands (Malvinas)"], ["FRO", "Faroe Islands"], ["FJI", "Fiji"], ["FIN", "Finland"], ["FRA", "France"], ["GUF", "French Guiana"], ["PYF", "French Polynesia"], ["ATF", "French Southern Territories"], ["GAB", "Gabon"], ["GMB", "Gambia"], ["GEO", "Georgia"], ["DEU", "Germany"], ["GHA", "Ghana"], ["GIB", "Gibraltar"], ["GRC", "Greece"], ["GRL", "Greenland"], ["GRD", "Grenada"], ["GLP", "Guadeloupe"], ["GUM", "Guam"], ["GTM", "Guatemala"], ["GGY", "Guernsey"], ["GIN", "Guinea"], ["GNB", "Guinea-Bissau"], ["GUY", "Guyana"], ["HTI", "Haiti"], ["HMD", "Heard Island and McDonald Islands"], ["VAT", "Holy See (Vatican City State)"], ["HND", "Honduras"], ["HKG", "Hong Kong"], ["HUN", "Hungary"], ["ISL", "Iceland"], ["IND", "India"], ["IDN", "Indonesia"], ["IRN", "Iran"], ["IRQ", "Iraq"], ["IRL", "Ireland"], ["IMN", "Isle of Man"], ["ISR", "Israel"], ["ITA", "Italy"], ["JAM", "Jamaica"], ["JPN", "Japan"], ["JEY", "Jersey"], ["JOR", "Jordan"], ["KAZ", "Kazakhstan"], ["KEN", "Kenya"], ["KIR", "Kiribati"], ["KWT", "Kuwait"], ["KGZ", "Kyrgyzstan"], ["LAO", "Laos"], ["LVA", "Latvia"], ["LBN", "Lebanon"], ["LSO", "Lesotho"], ["LBR", "Liberia"], ["LBY", "Libya"], ["LIE", "Liechtenstein"], ["LTU", "Lithuania"], ["LUX", "Luxembourg"], ["MAC", "Macao"], ["MDG", "Madagascar"], ["MWI", "Malawi"], ["MYS", "Malaysia"], ["MDV", "Maldives"], ["MLI", "Mali"], ["MLT", "Malta"], ["MHL", "Marshall Islands"], ["MTQ", "Martinique"], ["MRT", "Mauritania"], ["MUS", "Mauritius"], ["MYT", "Mayotte"], ["MEX", "Mexico"], ["FSM", "Micronesia, Federated States of"], ["MDA", "Moldova"], ["MCO", "Monaco"], ["MNG", "Mongolia"], ["MNE", "Montenegro"], ["MSR", "Montserrat"], ["MAR", "Morocco"], ["MOZ", "Mozambique"], ["MMR", "Myanmar"], ["NAM", "Namibia"], ["NRU", "Nauru"], ["NPL", "Nepal"], ["NLD", "Netherlands"], ["NCL", "New Caledonia"], ["NZL", "New Zealand"], ["NIC", "Nicaragua"], ["NER", "Niger"], ["NGA", "Nigeria"], ["NIU", "Niue"], ["NFK", "Norfolk Island"], ["PRK", "North Korea"], ["MKD", "North Macedonia"], ["MNP", "Northern Mariana Islands"], ["NOR", "Norway"], ["OMN", "Oman"], ["PAK", "Pakistan"], ["PLW", "Palau"], ["PSE", "Palestine, State of"], ["PAN", "Panama"], ["PNG", "Papua New Guinea"], ["PRY", "Paraguay"], ["PER", "Peru"], ["PHL", "Philippines"], ["PCN", "Pitcairn"], ["POL", "Poland"], ["PRT", "Portugal"], ["PRI", "Puerto Rico"], ["QAT", "Qatar"], ["ROU", "Romania"], ["RUS", "Russian Federation"], ["RWA", "Rwanda"], ["REU", "Réunion"], ["BLM", "Saint Barthélemy"], ["SHN", "Saint Helena, Ascension and Tristan da Cunha"], ["KNA", "Saint Kitts and Nevis"], ["LCA", "Saint Lucia"], ["MAF", "Saint Martin (French part)"], ["SPM", "Saint Pierre and Miquelon"], ["VCT", "Saint Vincent and the Grenadines"], ["WSM", "Samoa"], ["SMR", "San Marino"], ["STP", "Sao Tome and Principe"], ["SAU", "Saudi Arabia"], ["SEN", "Senegal"], ["SRB", "Serbia"], ["SYC", "Seychelles"], ["SLE", "Sierra Leone"], ["SGP", "Singapore"], ["SXM", "Sint Maarten (Dutch part)"], ["SVK", "Slovakia"], ["SVN", "Slovenia"], ["SLB", "Solomon Islands"], ["SOM", "Somalia"], ["ZAF", "South Africa"], ["SGS", "South Georgia and the South Sandwich Islands"], ["KOR", "South Korea"], ["SSD", "South Sudan"], ["ESP", "Spain"], ["LKA", "Sri Lanka"], ["SDN", "Sudan"], ["SUR", "Suriname"], ["SJM", "Svalbard and Jan Mayen"], ["SWE", "Sweden"], ["CHE", "Switzerland"], ["SYR", "Syria"], ["TWN", "Taiwan"], ["TJK", "Tajikistan"], ["TZA", "Tanzania"], ["THA", "Thailand"], ["TLS", "Timor-Leste"], ["TGO", "Togo"], ["TKL", "Tokelau"], ["TON", "Tonga"], ["TTO", "Trinidad and Tobago"], ["TUN", "Tunisia"], ["TKM", "Turkmenistan"], ["TCA", "Turks and Caicos Islands"], ["TUV", "Tuvalu"], ["TUR", "Türkiye"], ["UGA", "Uganda"], ["UKR", "Ukraine"], ["ARE", "United Arab Emirates"], ["GBR", "United Kingdom"], ["USA", "United States"], ["UMI", "United States Minor Outlying Islands"], ["URY", "Uruguay"], ["UZB", "Uzbekistan"], ["VUT", "Vanuatu"], ["VEN", "Venezuela"], ["VNM", "Vietnam"], ["VGB", "Virgin Islands, British"], ["VIR", "Virgin Islands, U.S."], ["WLF", "Wallis and Futuna"], ["ESH", "Western Sahara"], ["YEM", "Yemen"], ["ZMB", "Zambia"], ["ZWE", "Zimbabwe"], ["ALA", "Åland Islands"]];
+var CCODE={}, CNAME={};
+COUNTRIES.forEach(function(c){ CCODE[c[0]]=c[1]; CNAME[c[1].toLowerCase()]=c[0]; });
+function countryName(code){ return code&&CCODE[code]?CCODE[code]:(code||""); }
+function normCountry(v){
+  if(!v) return null; v=(""+v).trim(); if(!v) return null;
+  var m=v.match(/^([A-Za-z]{3})\b/); if(m){ var code=m[1].toUpperCase(); if(CCODE[code]) return code; }
+  if(CNAME[v.toLowerCase()]) return CNAME[v.toLowerCase()];
+  return v; // leave as typed if not a recognised country
+}
 function esc(s){return (s==null?"":""+s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 function fmtDate(d){ if(!d) return ""; var p=(""+d).slice(0,10).split("-"); return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:d; }
 function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},1800); }
@@ -331,6 +343,7 @@ $("setConnect").onclick=function(){
 
 function startApp(){
   $("app").style.display="block";
+  $("countryList").innerHTML=COUNTRIES.map(function(c){return '<option value="'+c[0]+' — '+esc(c[1])+'">';}).join("");
   sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   fillSelect($("f_sales"),SALES,"— select —");
   fillSelect($("f_owner"),OPERATORS,"— unassigned —");
@@ -438,13 +451,13 @@ function tableRows(){
     var cn=commentCount(i.comments); var cmtTxt=cn?(cn+(cn===1?" note":" notes")):"+ add";
     var overdue=i.target_etd && (""+i.target_etd).slice(0,10) < new Date().toISOString().slice(0,10) && i.status!=="Completed";
     return '<tr class="'+cls+'">'+
-      '<td class="ref">'+esc(i.ref)+'</td>'+
-      '<td class="ownref">'+esc(i.own_ref||"")+'</td>'+
+      '<td class="ref">'+esc(i.own_ref||"")+'</td>'+
       '<td>'+fmtDate(i.date_received)+'</td>'+
       '<td>'+esc(i.customer)+'</td>'+
+      '<td>'+esc(i.sales_contact||"")+'</td>'+
       '<td>'+(i.mode?'<span class="mode-tag">'+esc(i.mode)+'</span>':'')+'</td>'+
       '<td>'+esc(i.description||"")+'</td>'+
-      '<td>'+esc(route)+'</td>'+
+      '<td title="'+esc((countryName(i.origin)||"")+(i.origin&&i.destination?" → ":"")+(countryName(i.destination)||""))+'">'+esc(route)+'</td>'+
       '<td>'+(i.ops_owner?esc(i.ops_owner):'<span style="color:#c00000;font-weight:bold">— none —</span>')+'</td>'+
       '<td>'+statusSelect(i)+'</td>'+
       '<td><span class="task-chip '+chipCls+'" onclick="openTasks(\''+i.id+'\')">'+chipTxt+'</span></td>'+
@@ -475,18 +488,20 @@ function wireUi(){
   $("exportCsv").onclick=exportCsv;
 }
 async function addHandover(){
+  var oref=$("f_ownref").value.trim();
+  if(!oref){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="Your reference is required."; $("f_ownref").focus(); return; }
   var cust=$("f_customer").value.trim();
   if(!cust){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="Customer is required."; return; }
   var owner=$("f_owner").value.trim(), status=$("f_status").value;
   if(owner&&status==="New") status="Assigned";
-  var rec={ own_ref:$("f_ownref").value.trim()||null, date_received:$("f_date").value||null, sales_contact:$("f_sales").value.trim()||null,
+  var rec={ own_ref:oref, date_received:$("f_date").value||null, sales_contact:$("f_sales").value.trim()||null,
     customer:cust, mode:$("f_mode").value||null, direction:$("f_direction").value||null, description:$("f_desc").value.trim()||null,
-    origin:$("f_origin").value.trim()||null, destination:$("f_dest").value.trim()||null, ops_owner:owner||null, status:status,
+    origin:normCountry($("f_origin").value), destination:normCountry($("f_dest").value), ops_owner:owner||null, status:status,
     target_etd:$("f_eta").value||null, notes:$("f_notes").value.trim()||null };
   var r=await sb.from("handovers").insert(rec).select().single();
   if(r.error){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="Error: "+r.error.message; return; }
   $("formMsg").style.color="var(--green)"; $("formMsg").textContent="Added "+(r.data.ref||"");
-  toast("Handover "+(r.data.ref||"")+" added"); clearForm(); loadAll();
+  toast("Handover added"+(r.data.own_ref?" — "+r.data.own_ref:"")); clearForm(); loadAll();
 }
 function clearForm(){
   ["f_ownref","f_date","f_sales","f_customer","f_mode","f_direction","f_desc","f_origin","f_dest","f_owner","f_eta","f_notes"].forEach(function(id){$(id).value="";});
@@ -494,7 +509,7 @@ function clearForm(){
 }
 window.delItem=async function(id){
   var it=handovers.find(function(x){return x.id===id;}); if(!it) return;
-  if(!confirm("Delete "+it.ref+" — "+it.customer+"?  (Its tasks go too.)")) return;
+  if(!confirm("Delete "+(it.own_ref?it.own_ref+" — ":"")+it.customer+"?  (Its tasks go too.)")) return;
   var r=await sb.from("handovers").delete().eq("id",id);
   if(r.error){ toast("Error: "+r.error.message); return; }
   toast(it.ref+" deleted"); loadAll();
@@ -509,7 +524,7 @@ window.setStatus=async function(id,val){
 var editId=null;
 var EF=[["own_ref","Your reference","text",1],["date_received","Date received","date",1],["customer","Customer","cust",2],
   ["sales_contact","Sales contact","sel-sales",1],["mode","Mode","sel-mode",1],["direction","Direction","sel-dir",1],["status","Status","sel-status",1],
-  ["description","Shipment description","text",2],["origin","Origin","text",1],["destination","Destination","text",1],
+  ["description","Shipment description","text",2],["origin","Origin (country)","country",1],["destination","Destination (country)","country",1],
   ["ops_owner","OPS owner","sel-owner",1],["target_etd","Target / ETD","date",1],["notes","Notes","text",2]];
 window.openEdit=function(id){
   var it=handovers.find(function(x){return x.id===id;}); if(!it) return; editId=id;
@@ -521,6 +536,7 @@ window.openEdit=function(id){
     else if(ty==="sel-sales") ctrl=selHtml("e_"+k,[""].concat(SALES),v);
     else if(ty==="sel-owner") ctrl=selHtml("e_"+k,[""].concat(OPERATORS),v);
     else if(ty==="cust") ctrl='<input id="e_'+k+'" list="customerList" value="'+esc(v)+'">';
+    else if(ty==="country") ctrl='<input id="e_'+k+'" list="countryList" value="'+esc(v)+'" placeholder="Type code or country">';
     else { var vv=(ty==="date")?(""+v).slice(0,10):v; ctrl='<input id="e_'+k+'" type="'+(ty==="date"?"date":"text")+'" value="'+esc(vv)+'">'; }
     return '<div class="field'+(sp===2?' col2':'')+'"><label>'+lab+'</label>'+ctrl+'</div>';
   }).join(""); $("modalBg").classList.add("show");
@@ -529,10 +545,13 @@ function selHtml(id,opts,v){ var list=opts.slice(); if(v&&list.indexOf(v)<0) lis
 async function saveEdit(){
   var it=handovers.find(function(x){return x.id===editId;}); if(!it) return; var upd={};
   EF.forEach(function(f){ var el=$("e_"+f[0]); if(el){ var val=el.value; if(val==="—") val=""; upd[f[0]]=val||null; } });
+  if(!upd.own_ref){ toast("Your reference is required."); var er=$("e_own_ref"); if(er) er.focus(); return; }
+  if(upd.origin) upd.origin=normCountry(upd.origin);
+  if(upd.destination) upd.destination=normCountry(upd.destination);
   if(upd.ops_owner&&upd.status==="New") upd.status="Assigned";
   var r=await sb.from("handovers").update(upd).eq("id",editId);
   if(r.error){ toast("Error: "+r.error.message); return; }
-  closeEdit(); toast(it.ref+" updated"); loadAll();
+  closeEdit(); toast((upd.own_ref||it.customer)+" updated"); loadAll();
 }
 function closeEdit(){ $("modalBg").classList.remove("show"); }
 
@@ -540,7 +559,7 @@ function closeEdit(){ $("modalBg").classList.remove("show"); }
 var taskHid=null;
 window.openTasks=function(id){
   taskHid=id; var it=handovers.find(function(x){return x.id===id;});
-  $("taskTitle").innerHTML='Tasks — '+esc(it?it.ref:"")+' '+esc(it?it.customer:"")+' <span class="x" id="taskCloseI">✕</span>';
+  $("taskTitle").innerHTML='Tasks — '+esc(it&&it.own_ref?it.own_ref+" · ":"")+esc(it?it.customer:"")+' <span class="x" id="taskCloseI">✕</span>';
   $("taskCloseI").onclick=closeTasks;
   renderTasks(); $("taskBg").classList.add("show");
 };
@@ -575,7 +594,7 @@ var cmtHid=null;
 function myName(){ try{ return localStorage.getItem("mw_me")||""; }catch(e){ return ""; } }
 window.openComments=function(id){
   cmtHid=id; var it=handovers.find(function(x){return x.id===id;});
-  $("cmtTitle").innerHTML='Comments — '+esc(it?it.ref:"")+' '+esc(it?it.customer:"")+' <span class="x" id="cmtCloseI">✕</span>';
+  $("cmtTitle").innerHTML='Comments — '+esc(it&&it.own_ref?it.own_ref+" · ":"")+esc(it?it.customer:"")+' <span class="x" id="cmtCloseI">✕</span>';
   $("cmtCloseI").onclick=closeComments;
   var me=myName();
   $("c_author").innerHTML='<option value="">Who…</option>'+ALL_PEOPLE.map(function(p){return '<option'+(p===me?' selected':'')+'>'+esc(p)+'</option>';}).join("");
@@ -608,8 +627,8 @@ function closeComments(){ $("cmtBg").classList.remove("show"); }
 
 /* export */
 function exportCsv(){
-  var cols=["ref","own_ref","date_received","sales_contact","customer","mode","direction","description","origin","destination","ops_owner","status","target_etd","notes","comments"];
-  var head=["Ref","Your ref","Received","Sales","Customer","Mode","Direction","Description","Origin","Destination","OPS owner","Status","Target/ETD","Notes","Comments","Tasks done/total"];
+  var cols=["own_ref","date_received","sales_contact","customer","mode","direction","description","origin","destination","ops_owner","status","target_etd","notes","comments"];
+  var head=["Ref","Received","Sales","Customer","Mode","Direction","Description","Origin","Destination","OPS owner","Status","Target/ETD","Notes","Comments","Tasks done/total"];
   var rows=[head].concat(handovers.map(function(i){
     var tc=taskCounts(i.id);
     return cols.map(function(c){return i[c]||"";}).concat([tc.done+"/"+tc.total]);
