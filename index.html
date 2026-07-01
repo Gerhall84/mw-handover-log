@@ -232,7 +232,7 @@
     <table>
       <thead><tr>
         <th>QT no.</th><th>File ref</th><th>Received</th><th>Customer</th><th>Sales</th><th>Mode</th>
-        <th>Description</th><th>Route</th><th>OPS owner</th><th>Status</th><th>Tasks</th><th>Comments</th><th>Target</th><th></th>
+        <th>Description</th><th>Route</th><th>OPS owner</th><th>Status</th><th>Comments</th><th>Target</th><th></th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
@@ -256,22 +256,6 @@
     <div class="form-actions">
       <button class="btn btn-green" id="saveEdit">Save changes</button>
       <button class="btn btn-light" id="cancelEdit" style="border:1px solid var(--line)">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<!-- Tasks modal -->
-<div class="modal-bg" id="taskBg">
-  <div class="modal">
-    <h2 id="taskTitle">Tasks <span class="x" id="taskClose">✕</span></h2>
-    <div class="mbody">
-      <div class="task-list" id="taskList"></div>
-      <div class="task-add">
-        <div class="field"><label>New task</label><input type="text" id="t_text" placeholder="What needs doing?"></div>
-        <div class="field"><label>Assignee</label><input type="text" id="t_assignee" list="ownerList" placeholder="Who"></div>
-        <div class="field"><label>Due</label><input type="date" id="t_due"></div>
-        <div class="field"><label>&nbsp;</label><button class="btn btn-green" id="t_add">Add task</button></div>
-      </div>
     </div>
   </div>
 </div>
@@ -315,7 +299,7 @@ try{
 }catch(e){}
 
 var $=function(id){return document.getElementById(id);};
-var sb=null, handovers=[], tasksByH={};
+var sb=null, handovers=[];
 
 var STATUSES=["New","Assigned","Booked","In Transit","Completed","On HOLD"];
 var SALES=["Gary","Ger","Eoin","Natacha","Ashley","Tea"];
@@ -428,11 +412,7 @@ async function loadAll(){
   try{
     var h=await sb.from("handovers").select("*").order("created_at",{ascending:false});
     if(h.error) throw h.error;
-    var t=await sb.from("handover_tasks").select("*").order("created_at",{ascending:true});
-    if(t.error) throw t.error;
     handovers=h.data||[];
-    tasksByH={};
-    (t.data||[]).forEach(function(x){ (tasksByH[x.handover_id]=tasksByH[x.handover_id]||[]).push(x); });
     renderAll();
     refreshDetailIfOpen();
   }catch(e){ setLive(false); toast("Load error: "+(e.message||e)); }
@@ -441,7 +421,6 @@ async function loadAll(){
 function subscribe(){
   sb.channel("handover-live")
     .on("postgres_changes",{event:"*",schema:"public",table:"handovers"},loadAll)
-    .on("postgres_changes",{event:"*",schema:"public",table:"handover_tasks"},loadAll)
     .subscribe(function(status){ setLive(status==="SUBSCRIBED"); });
 }
 function setLive(on){
@@ -450,7 +429,6 @@ function setLive(on){
 }
 
 /* ---------- render ---------- */
-function taskCounts(id){ var arr=tasksByH[id]||[]; return {done:arr.filter(function(x){return x.done;}).length,total:arr.length}; }
 function commentCount(txt){ if(!txt) return 0; return txt.split("\n").filter(function(l){return l.trim();}).length; }
 var ALL_PEOPLE=SALES.concat(OPERATORS).filter(function(v,i,a){return a.indexOf(v)===i;}).sort();
 
@@ -509,9 +487,6 @@ function tableRows(){
     var clr=STATUS_CLR[i.status]||["#eee","#333"];
     var cls=(!i.ops_owner?"unassigned":"")+(i.status==="Completed"?" completed":"");
     var route=(i.origin||"")+(i.origin&&i.destination?" → ":"")+(i.destination||"");
-    var tc=taskCounts(i.id);
-    var chipCls=tc.total===0?"":(tc.done===tc.total?"done":"todo");
-    var chipTxt=tc.total===0?"+ add":(tc.done+"/"+tc.total);
     var cn=commentCount(i.comments); var cmtTxt=cn?(cn+(cn===1?" note":" notes")):"+ add";
     var overdue=i.target_etd && (""+i.target_etd).slice(0,10) < new Date().toISOString().slice(0,10) && i.status!=="Completed";
     return '<tr class="'+cls+'">'+
@@ -525,7 +500,6 @@ function tableRows(){
       '<td title="'+esc((countryName(i.origin)||"")+(i.origin&&i.destination?" → ":"")+(countryName(i.destination)||""))+'">'+esc(route)+'</td>'+
       '<td>'+(i.ops_owner?esc(i.ops_owner):'<span style="color:#c00000;font-weight:bold">— none —</span>')+'</td>'+
       '<td>'+statusSelect(i)+'</td>'+
-      '<td><span class="task-chip '+chipCls+'" onclick="openTasks(\''+i.id+'\')">'+chipTxt+'</span></td>'+
       '<td><span class="task-chip" onclick="openComments(\''+i.id+'\')">'+cmtTxt+'</span></td>'+
       '<td'+(overdue?' style="color:#b00020;font-weight:bold"':'')+'>'+fmtDate(i.target_etd)+(overdue?' · overdue':'')+'</td>'+
       '<td class="row-actions">'+
@@ -545,8 +519,6 @@ function wireUi(){
   $("toggleForm").onclick=function(){ var w=$("formWrap"),hid=w.style.display==="none"; w.style.display=hid?"block":"none"; $("chev").textContent=hid?"▲ hide":"▼ show"; };
   $("modalClose").onclick=closeEdit; $("cancelEdit").onclick=closeEdit; $("saveEdit").onclick=saveEdit;
   $("modalBg").onclick=function(e){ if(e.target===$("modalBg")) closeEdit(); };
-  $("taskClose").onclick=closeTasks; $("taskBg").onclick=function(e){ if(e.target===$("taskBg")) closeTasks(); };
-  $("t_add").onclick=addTask;
   $("cmtClose").onclick=closeComments; $("cmtBg").onclick=function(e){ if(e.target===$("cmtBg")) closeComments(); };
   $("c_add").onclick=addComment;
   $("c_text").addEventListener("keydown",function(e){ if(e.key==="Enter") addComment(); });
@@ -574,7 +546,7 @@ function clearForm(){
 }
 window.delItem=async function(id){
   var it=handovers.find(function(x){return x.id===id;}); if(!it) return;
-  if(!confirm("Delete "+(it.own_ref?it.own_ref+" — ":"")+it.customer+"?  (Its tasks go too.)")) return;
+  if(!confirm("Delete "+(it.own_ref?it.own_ref+" — ":"")+it.customer+"?")) return;
   var r=await sb.from("handovers").delete().eq("id",id);
   if(r.error){ toast("Error: "+r.error.message); return; }
   toast(it.ref+" deleted"); loadAll();
@@ -619,40 +591,6 @@ async function saveEdit(){
   closeEdit(); toast((upd.own_ref||it.customer)+" updated"); loadAll();
 }
 function closeEdit(){ $("modalBg").classList.remove("show"); }
-
-/* tasks modal */
-var taskHid=null;
-window.openTasks=function(id){
-  taskHid=id; var it=handovers.find(function(x){return x.id===id;});
-  $("taskTitle").innerHTML='Tasks — '+esc(it&&it.own_ref?it.own_ref+" · ":"")+esc(it?it.customer:"")+' <span class="x" id="taskCloseI">✕</span>';
-  $("taskCloseI").onclick=closeTasks;
-  renderTasks(); $("taskBg").classList.add("show");
-};
-function renderTasks(){
-  var arr=tasksByH[taskHid]||[];
-  $("taskList").innerHTML = arr.length? arr.map(function(t){
-    return '<div class="task-item'+(t.done?" done":"")+'">'+
-      '<input type="checkbox" '+(t.done?"checked":"")+' onchange="toggleTask(\''+t.id+'\',this.checked)">'+
-      '<span class="ttext">'+esc(t.task)+'</span>'+
-      '<span class="tmeta">'+(t.assignee?esc(t.assignee):"—")+(t.due_date?" · due "+fmtDate(t.due_date):"")+'</span>'+
-      '<button class="btn btn-danger btn-sm" onclick="delTask(\''+t.id+'\')">✕</button></div>';
-  }).join("") : '<div style="padding:14px 0;color:var(--muted);font-size:13px">No tasks yet. Add the first one below.</div>';
-}
-async function addTask(){
-  var txt=$("t_text").value.trim(); if(!txt){ $("t_text").focus(); return; }
-  var rec={ handover_id:taskHid, task:txt, assignee:$("t_assignee").value.trim()||null, due_date:$("t_due").value||null, done:false };
-  var r=await sb.from("handover_tasks").insert(rec); if(r.error){ toast("Error: "+r.error.message); return; }
-  $("t_text").value=""; $("t_assignee").value=""; $("t_due").value=""; await loadAll(); renderTasks();
-}
-window.toggleTask=async function(id,done){
-  var r=await sb.from("handover_tasks").update({done:done}).eq("id",id); if(r.error){ toast("Error"); return; }
-  await loadAll(); renderTasks();
-};
-window.delTask=async function(id){
-  var r=await sb.from("handover_tasks").delete().eq("id",id); if(r.error){ toast("Error"); return; }
-  await loadAll(); renderTasks();
-};
-function closeTasks(){ $("taskBg").classList.remove("show"); }
 
 /* comments (running notes log, stored in handovers.comments) */
 var cmtHid=null;
@@ -710,13 +648,6 @@ function renderDetail(){
     '<div class="dl" style="margin-top:6px">Description</div><div class="dv">'+(i.description?esc(i.description):"—")+'</div>'+
     '<div class="dl" style="margin-top:6px">Notes</div><div class="dv">'+(i.notes?esc(i.notes):"—")+'</div>'+
     '<div style="margin-top:10px"><button class="btn btn-light btn-sm" style="border:1px solid var(--line)" onclick="openEdit(\''+i.id+'\')">Edit all fields</button></div>';
-  var tasks=tasksByH[i.id]||[];
-  html+='<div class="dsec">Tasks ('+tasks.filter(function(t){return t.done;}).length+'/'+tasks.length+')</div>';
-  html+=tasks.length?tasks.map(function(t){
-    return '<div class="task-item'+(t.done?" done":"")+'"><input type="checkbox" '+(t.done?"checked":"")+' onchange="toggleTask(\''+t.id+'\',this.checked)"><span class="ttext">'+esc(t.task)+'<br><span class="tmeta">'+(t.assignee?esc(t.assignee):"—")+(t.due_date?" · due "+fmtDate(t.due_date):"")+'</span></span><button class="btn btn-danger btn-sm" onclick="delTask(\''+t.id+'\')">✕</button></div>';
-  }).join(""):'<div style="color:var(--muted);font-size:12.5px;padding:4px 0">No tasks yet.</div>';
-  html+='<div style="display:grid;grid-template-columns:1fr 116px auto;gap:6px;margin-top:8px"><input id="d_ttext" placeholder="New task"><input id="d_tassignee" list="ownerList" placeholder="Who"><button class="btn btn-green btn-sm" onclick="dAddTask()">Add</button></div>'+
-    '<div style="margin-top:6px"><input id="d_tdue" type="date" style="max-width:150px" title="Due date"></div>';
   var lines=(i.comments||"").split("\n").filter(function(l){return l.trim();});
   html+='<div class="dsec">Comments</div>';
   html+=lines.length?lines.map(function(l){ var m=l.match(/^(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2} · [^—]+)— (.*)$/); var meta=m?m[1].trim():""; var body=m?m[2]:l; return '<div class="task-item"><span class="ttext">'+esc(body)+'<br><span class="tmeta">'+esc(meta)+'</span></span></div>'; }).join(""):'<div style="color:var(--muted);font-size:12.5px;padding:4px 0">No notes yet.</div>';
@@ -724,12 +655,6 @@ function renderDetail(){
   $("drawerBody").innerHTML=html;
   var me0=myName(); $("d_cauthor").innerHTML='<option value="">Who…</option>'+ALL_PEOPLE.map(function(p){return '<option'+(p===me0?' selected':'')+'>'+esc(p)+'</option>';}).join("");
 }
-window.dAddTask=async function(){
-  var txt=$("d_ttext").value.trim(); if(!txt){ $("d_ttext").focus(); return; }
-  var r=await sb.from("handover_tasks").insert({handover_id:detailId,task:txt,assignee:$("d_tassignee").value.trim()||null,due_date:$("d_tdue").value||null,done:false});
-  if(r.error){ toast("Error: "+r.error.message); return; }
-  await loadAll();
-};
 window.dAddComment=async function(){
   var txt=$("d_ctext").value.trim(); if(!txt){ $("d_ctext").focus(); return; }
   var who=$("d_cauthor").value.trim(); if(who){ try{ localStorage.setItem("mw_me",who); }catch(e){} }
@@ -744,10 +669,9 @@ window.dAddComment=async function(){
 /* export */
 function exportCsv(){
   var cols=["own_ref","file_ref","date_received","sales_contact","customer","mode","direction","description","origin","destination","ops_owner","status","target_etd","notes","comments"];
-  var head=["QT no.","File ref","Received","Sales","Customer","Mode","Direction","Description","Origin","Destination","OPS owner","Status","Target/ETD","Notes","Comments","Tasks done/total"];
+  var head=["QT no.","File ref","Received","Sales","Customer","Mode","Direction","Description","Origin","Destination","OPS owner","Status","Target/ETD","Notes","Comments"];
   var rows=[head].concat(handovers.map(function(i){
-    var tc=taskCounts(i.id);
-    return cols.map(function(c){return i[c]||"";}).concat([tc.done+"/"+tc.total]);
+    return cols.map(function(c){return i[c]||"";});
   }));
   var csv=rows.map(function(r){return r.map(function(v){v=""+v; return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(",");}).join("\r\n");
   var blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}),u=URL.createObjectURL(blob),a=document.createElement("a");
