@@ -109,6 +109,17 @@
   .task-add{display:grid;grid-template-columns:1fr 150px 130px auto;gap:8px;padding:12px 18px;background:#f6f8fb;align-items:end}
   .task-add .field label{font-size:10px}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 20px;border-radius:6px;font-size:13px;font-weight:bold;opacity:0;transition:opacity .25s;pointer-events:none;z-index:60}
+  .drawer-bg{position:fixed;inset:0;background:rgba(15,36,64,.35);display:none;z-index:70}
+  .drawer-bg.show{display:block}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:480px;max-width:94vw;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.25);transform:translateX(102%);transition:transform .25s ease;z-index:71;display:flex;flex-direction:column}
+  .drawer.show{transform:translateX(0)}
+  .drawer .dh{background:var(--navy);color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .drawer .dh .x{cursor:pointer;font-size:20px;line-height:1}
+  .drawer .db{padding:16px 18px;overflow:auto;flex:1}
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:6px}
+  .detail-grid .dl{font-size:11px;color:var(--muted);font-weight:bold}
+  .detail-grid .dv{font-size:13px}
+  .dsec{font-size:13px;font-weight:bold;color:var(--navy);border-top:1px solid var(--line);padding-top:12px;margin:14px 0 8px}
   .toast.show{opacity:1}
 
   /* setup screen */
@@ -176,8 +187,9 @@
     <div id="formWrap">
       <div class="form-grid">
         <div class="field"><label>QT no. — from Sales <span style="color:#c00000">*</span></label><input type="text" id="f_ownref" placeholder="Sales quotation (QT) number"></div>
+        <div class="field"><label>File ref (IE)</label><input type="text" id="f_fileref" placeholder="IE / operations file ref"></div>
         <div class="field"><label>Date received</label><input type="date" id="f_date"></div>
-        <div class="field col2"><label>Customer</label><input type="text" id="f_customer" list="customerList" placeholder="Customer name — past ones suggested"></div>
+        <div class="field"><label>Customer</label><input type="text" id="f_customer" list="customerList" placeholder="Customer name — past ones suggested"></div>
 
         <div class="field"><label>Sales contact</label><select id="f_sales"></select></div>
         <div class="field"><label>Mode</label><select id="f_mode"><option value="">—</option><option>Air</option><option>Ocean</option><option>Road</option><option>Customs</option><option>Multi-modal</option></select></div>
@@ -219,7 +231,7 @@
   <div class="tablecard">
     <table>
       <thead><tr>
-        <th>QT no.</th><th>Received</th><th>Customer</th><th>Sales</th><th>Mode</th>
+        <th>QT no.</th><th>File ref</th><th>Received</th><th>Customer</th><th>Sales</th><th>Mode</th>
         <th>Description</th><th>Route</th><th>OPS owner</th><th>Status</th><th>Tasks</th><th>Comments</th><th>Target</th><th></th>
       </tr></thead>
       <tbody id="rows"></tbody>
@@ -282,6 +294,8 @@
 <datalist id="ownerList"></datalist>
 <datalist id="customerList"></datalist>
 <datalist id="countryList"></datalist>
+<div class="drawer-bg" id="drawerBg" onclick="closeDetail()"></div>
+<aside class="drawer" id="drawer"><div class="dh" id="drawerHead"></div><div class="db" id="drawerBody"></div></aside>
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -328,7 +342,7 @@ function fmtDate(d){ if(!d) return ""; var p=(""+d).slice(0,10).split("-"); retu
 function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},1800); }
 
 /* ---------- country autocomplete (cross-browser, incl. Safari) ---------- */
-var acInput=null;
+var acInput=null, acList=[], acIdx=-1;
 var acBox=document.createElement("div");
 acBox.id="acBox";
 acBox.style.cssText="position:absolute;z-index:9999;background:#fff;border:1px solid #cdd6e2;border-radius:6px;box-shadow:0 6px 22px rgba(15,36,64,.18);max-height:250px;overflow:auto;display:none;min-width:230px;font-size:13px;font-family:Arial,Helvetica,sans-serif";
@@ -344,29 +358,37 @@ function acMatches(q){
   }
   return starts.concat(has).slice(0,14);
 }
+function acHighlight(){
+  var items=acBox.querySelectorAll(".ac-item");
+  for(var i=0;i<items.length;i++){ items[i].style.background=(i===acIdx)?"#dbe6f5":"#fff"; }
+  if(acIdx>=0 && items[acIdx]) items[acIdx].scrollIntoView({block:"nearest"});
+}
 function showAC(input){
-  acInput=input;
-  var m=acMatches(input.value);
-  if(!m.length){ acBox.style.display="none"; return; }
-  acBox.innerHTML=m.map(function(c){return '<div class="ac-item" data-code="'+c[0]+'" style="padding:8px 11px;cursor:pointer;border-bottom:1px solid #f0f2f5"><b style="color:#1F3864">'+esc(c[0])+'</b> &nbsp;'+esc(c[1])+'</div>';}).join("");
+  acInput=input; acList=acMatches(input.value); acIdx=-1;
+  if(!acList.length){ acBox.style.display="none"; return; }
+  acBox.innerHTML=acList.map(function(c,i){return '<div class="ac-item" data-idx="'+i+'" data-code="'+c[0]+'" style="padding:8px 11px;cursor:pointer;border-bottom:1px solid #f0f2f5"><b style="color:#1F3864">'+esc(c[0])+'</b> &nbsp;'+esc(c[1])+'</div>';}).join("");
   var r=input.getBoundingClientRect();
   acBox.style.left=(r.left+window.scrollX)+"px";
   acBox.style.top=(r.bottom+window.scrollY+2)+"px";
   acBox.style.width=Math.max(r.width,230)+"px";
   acBox.style.display="block";
 }
+function acPick(c){ if(acInput&&c){ acInput.value=c[0]; } acBox.style.display="none"; }
 document.addEventListener("input",function(e){ if(e.target.classList&&e.target.classList.contains("country-ac")) showAC(e.target); });
 document.addEventListener("focusin",function(e){ if(e.target.classList&&e.target.classList.contains("country-ac")) showAC(e.target); });
+document.addEventListener("keydown",function(e){
+  if(acBox.style.display!=="block"||!acInput||e.target!==acInput) { if(e.key==="Escape") acBox.style.display="none"; return; }
+  if(e.key==="ArrowDown"){ e.preventDefault(); acIdx=Math.min(acList.length-1,acIdx+1); acHighlight(); }
+  else if(e.key==="ArrowUp"){ e.preventDefault(); acIdx=Math.max(0,acIdx-1); acHighlight(); }
+  else if(e.key==="Enter"){ if(acIdx>=0||acList.length){ e.preventDefault(); acPick(acList[acIdx>=0?acIdx:0]); } }
+  else if(e.key==="Escape"){ acBox.style.display="none"; }
+});
 acBox.addEventListener("mousedown",function(e){
   var it=e.target.closest?e.target.closest(".ac-item"):null; if(!it||!acInput) return;
-  e.preventDefault();
-  acInput.value=it.getAttribute("data-code");
-  acBox.style.display="none";
+  e.preventDefault(); acPick(acList[parseInt(it.getAttribute("data-idx"),10)]);
 });
-acBox.addEventListener("mouseover",function(e){ var it=e.target.closest?e.target.closest(".ac-item"):null; if(it) it.style.background="#eef2f8"; });
-acBox.addEventListener("mouseout",function(e){ var it=e.target.closest?e.target.closest(".ac-item"):null; if(it) it.style.background="#fff"; });
+acBox.addEventListener("mouseover",function(e){ var it=e.target.closest?e.target.closest(".ac-item"):null; if(it){ acIdx=parseInt(it.getAttribute("data-idx"),10); acHighlight(); } });
 document.addEventListener("click",function(e){ if(e.target!==acInput && !acBox.contains(e.target)) acBox.style.display="none"; });
-document.addEventListener("keydown",function(e){ if(e.key==="Escape") acBox.style.display="none"; });
 
 /* ---------- boot ---------- */
 if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
@@ -412,6 +434,7 @@ async function loadAll(){
     tasksByH={};
     (t.data||[]).forEach(function(x){ (tasksByH[x.handover_id]=tasksByH[x.handover_id]||[]).push(x); });
     renderAll();
+    refreshDetailIfOpen();
   }catch(e){ setLive(false); toast("Load error: "+(e.message||e)); }
 }
 
@@ -478,7 +501,7 @@ function tableRows(){
     if(fm&&i.mode!==fm) return false;
     if(hideDone&&i.status==="Completed") return false;
     if(mine){ if(!me||i.ops_owner!==me) return false; }
-    if(q){ var hay=((i.ref||"")+" "+(i.own_ref||"")+" "+(i.customer||"")+" "+(i.description||"")+" "+(i.sales_contact||"")+" "+(i.origin||"")+" "+(i.destination||"")+" "+(i.comments||"")).toLowerCase(); if(hay.indexOf(q)<0) return false; }
+    if(q){ var hay=((i.ref||"")+" "+(i.own_ref||"")+" "+(i.file_ref||"")+" "+(i.customer||"")+" "+(i.description||"")+" "+(i.sales_contact||"")+" "+(i.origin||"")+" "+(i.destination||"")+" "+(i.comments||"")).toLowerCase(); if(hay.indexOf(q)<0) return false; }
     return true;
   });
   $("emptyState").style.display=handovers.length===0?"block":"none";
@@ -492,7 +515,8 @@ function tableRows(){
     var cn=commentCount(i.comments); var cmtTxt=cn?(cn+(cn===1?" note":" notes")):"+ add";
     var overdue=i.target_etd && (""+i.target_etd).slice(0,10) < new Date().toISOString().slice(0,10) && i.status!=="Completed";
     return '<tr class="'+cls+'">'+
-      '<td class="ref">'+esc(i.own_ref||"")+'</td>'+
+      '<td class="ref" style="cursor:pointer;text-decoration:underline" onclick="openDetail(\''+i.id+'\')" title="Open details">'+esc(i.own_ref||"")+'</td>'+
+      '<td style="cursor:pointer" onclick="openDetail(\''+i.id+'\')">'+esc(i.file_ref||"")+'</td>'+
       '<td>'+fmtDate(i.date_received)+'</td>'+
       '<td>'+esc(i.customer)+'</td>'+
       '<td>'+esc(i.sales_contact||"")+'</td>'+
@@ -535,7 +559,7 @@ async function addHandover(){
   if(!cust){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="Customer is required."; return; }
   var owner=$("f_owner").value.trim(), status=$("f_status").value;
   if(owner&&status==="New") status="Assigned";
-  var rec={ own_ref:oref, date_received:$("f_date").value||null, sales_contact:$("f_sales").value.trim()||null,
+  var rec={ own_ref:oref, file_ref:$("f_fileref").value.trim()||null, date_received:$("f_date").value||null, sales_contact:$("f_sales").value.trim()||null,
     customer:cust, mode:$("f_mode").value||null, direction:$("f_direction").value||null, description:$("f_desc").value.trim()||null,
     origin:normCountry($("f_origin").value), destination:normCountry($("f_dest").value), ops_owner:owner||null, status:status,
     target_etd:$("f_eta").value||null, notes:$("f_notes").value.trim()||null };
@@ -545,7 +569,7 @@ async function addHandover(){
   toast("Handover added"+(r.data.own_ref?" — "+r.data.own_ref:"")); clearForm(); loadAll();
 }
 function clearForm(){
-  ["f_ownref","f_date","f_sales","f_customer","f_mode","f_direction","f_desc","f_origin","f_dest","f_owner","f_eta","f_notes"].forEach(function(id){$(id).value="";});
+  ["f_ownref","f_fileref","f_date","f_sales","f_customer","f_mode","f_direction","f_desc","f_origin","f_dest","f_owner","f_eta","f_notes"].forEach(function(id){$(id).value="";});
   $("f_date").value=new Date().toISOString().slice(0,10); $("f_status").value="New";
 }
 window.delItem=async function(id){
@@ -563,7 +587,7 @@ window.setStatus=async function(id,val){
 
 /* edit modal */
 var editId=null;
-var EF=[["own_ref","QT no. (from Sales)","text",1],["date_received","Date received","date",1],["customer","Customer","cust",2],
+var EF=[["own_ref","QT no. (from Sales)","text",1],["file_ref","File ref (IE)","text",1],["date_received","Date received","date",1],["customer","Customer","cust",2],
   ["sales_contact","Sales contact","sel-sales",1],["mode","Mode","sel-mode",1],["direction","Direction","sel-dir",1],["status","Status","sel-status",1],
   ["description","Shipment description","text",2],["origin","Origin (country)","country",1],["destination","Destination (country)","country",1],
   ["ops_owner","OPS owner","sel-owner",1],["target_etd","Target / ETD","date",1],["notes","Notes","text",2]];
@@ -666,10 +690,61 @@ async function addComment(){
 }
 function closeComments(){ $("cmtBg").classList.remove("show"); }
 
+/* ---------- detail drawer ---------- */
+var detailId=null;
+window.openDetail=function(id){ detailId=id; renderDetail(); $("drawer").classList.add("show"); $("drawerBg").classList.add("show"); };
+window.closeDetail=function(){ $("drawer").classList.remove("show"); $("drawerBg").classList.remove("show"); detailId=null; };
+function refreshDetailIfOpen(){ if(detailId && $("drawer").classList.contains("show")){ if($("drawer").contains(document.activeElement)) return; renderDetail(); } }
+function renderDetail(){
+  var i=handovers.find(function(x){return x.id===detailId;}); if(!i){ window.closeDetail(); return; }
+  $("drawerHead").innerHTML='<div><div style="font-size:16px;font-weight:bold">'+esc(i.own_ref||"(no QT)")+'</div>'+
+    '<div style="font-size:12px;color:#c7d4ea">File ref: '+esc(i.file_ref||"—")+'  ·  '+esc(i.customer||"")+'</div></div>'+
+    '<span class="x" onclick="closeDetail()">✕</span>';
+  var route=(countryName(i.origin)||"")+(i.origin&&i.destination?" → ":"")+(countryName(i.destination)||"");
+  function fld(l,v){ return '<div><div class="dl">'+l+'</div><div class="dv">'+(v?esc(v):"—")+'</div></div>'; }
+  var html='<div class="detail-grid"><div style="grid-column:1/3">'+statusSelect(i)+'</div>'+
+    fld("Customer",i.customer)+fld("Sales",i.sales_contact)+
+    fld("Received",fmtDate(i.date_received))+fld("Target / ETD",fmtDate(i.target_etd))+
+    fld("Mode",i.mode)+fld("Direction",i.direction)+
+    fld("OPS owner",i.ops_owner)+fld("Route",route)+'</div>'+
+    '<div class="dl" style="margin-top:6px">Description</div><div class="dv">'+(i.description?esc(i.description):"—")+'</div>'+
+    '<div class="dl" style="margin-top:6px">Notes</div><div class="dv">'+(i.notes?esc(i.notes):"—")+'</div>'+
+    '<div style="margin-top:10px"><button class="btn btn-light btn-sm" style="border:1px solid var(--line)" onclick="openEdit(\''+i.id+'\')">Edit all fields</button></div>';
+  var tasks=tasksByH[i.id]||[];
+  html+='<div class="dsec">Tasks ('+tasks.filter(function(t){return t.done;}).length+'/'+tasks.length+')</div>';
+  html+=tasks.length?tasks.map(function(t){
+    return '<div class="task-item'+(t.done?" done":"")+'"><input type="checkbox" '+(t.done?"checked":"")+' onchange="toggleTask(\''+t.id+'\',this.checked)"><span class="ttext">'+esc(t.task)+'<br><span class="tmeta">'+(t.assignee?esc(t.assignee):"—")+(t.due_date?" · due "+fmtDate(t.due_date):"")+'</span></span><button class="btn btn-danger btn-sm" onclick="delTask(\''+t.id+'\')">✕</button></div>';
+  }).join(""):'<div style="color:var(--muted);font-size:12.5px;padding:4px 0">No tasks yet.</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 116px auto;gap:6px;margin-top:8px"><input id="d_ttext" placeholder="New task"><input id="d_tassignee" list="ownerList" placeholder="Who"><button class="btn btn-green btn-sm" onclick="dAddTask()">Add</button></div>'+
+    '<div style="margin-top:6px"><input id="d_tdue" type="date" style="max-width:150px" title="Due date"></div>';
+  var lines=(i.comments||"").split("\n").filter(function(l){return l.trim();});
+  html+='<div class="dsec">Comments</div>';
+  html+=lines.length?lines.map(function(l){ var m=l.match(/^(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2} · [^—]+)— (.*)$/); var meta=m?m[1].trim():""; var body=m?m[2]:l; return '<div class="task-item"><span class="ttext">'+esc(body)+'<br><span class="tmeta">'+esc(meta)+'</span></span></div>'; }).join(""):'<div style="color:var(--muted);font-size:12.5px;padding:4px 0">No notes yet.</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 128px auto;gap:6px;margin-top:8px"><input id="d_ctext" placeholder="Add a note"><select id="d_cauthor"></select><button class="btn btn-green btn-sm" onclick="dAddComment()">Add</button></div>';
+  $("drawerBody").innerHTML=html;
+  var me0=myName(); $("d_cauthor").innerHTML='<option value="">Who…</option>'+ALL_PEOPLE.map(function(p){return '<option'+(p===me0?' selected':'')+'>'+esc(p)+'</option>';}).join("");
+}
+window.dAddTask=async function(){
+  var txt=$("d_ttext").value.trim(); if(!txt){ $("d_ttext").focus(); return; }
+  var r=await sb.from("handover_tasks").insert({handover_id:detailId,task:txt,assignee:$("d_tassignee").value.trim()||null,due_date:$("d_tdue").value||null,done:false});
+  if(r.error){ toast("Error: "+r.error.message); return; }
+  await loadAll();
+};
+window.dAddComment=async function(){
+  var txt=$("d_ctext").value.trim(); if(!txt){ $("d_ctext").focus(); return; }
+  var who=$("d_cauthor").value.trim(); if(who){ try{ localStorage.setItem("mw_me",who); }catch(e){} }
+  var d=new Date(); var stamp=String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+  var line=stamp+" · "+(who||"—")+" — "+txt;
+  var it=handovers.find(function(x){return x.id===detailId;}); var existing=(it&&it.comments)?it.comments:"";
+  var r=await sb.from("handovers").update({comments:line+(existing?"\n"+existing:"")}).eq("id",detailId);
+  if(r.error){ toast("Error: "+r.error.message); return; }
+  await loadAll();
+};
+
 /* export */
 function exportCsv(){
-  var cols=["own_ref","date_received","sales_contact","customer","mode","direction","description","origin","destination","ops_owner","status","target_etd","notes","comments"];
-  var head=["QT no.","Received","Sales","Customer","Mode","Direction","Description","Origin","Destination","OPS owner","Status","Target/ETD","Notes","Comments","Tasks done/total"];
+  var cols=["own_ref","file_ref","date_received","sales_contact","customer","mode","direction","description","origin","destination","ops_owner","status","target_etd","notes","comments"];
+  var head=["QT no.","File ref","Received","Sales","Customer","Mode","Direction","Description","Origin","Destination","OPS owner","Status","Target/ETD","Notes","Comments","Tasks done/total"];
   var rows=[head].concat(handovers.map(function(i){
     var tc=taskCounts(i.id);
     return cols.map(function(c){return i[c]||"";}).concat([tc.done+"/"+tc.total]);
