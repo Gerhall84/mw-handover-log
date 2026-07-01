@@ -175,7 +175,7 @@
     <h2 id="toggleForm">+ Log a new handover <span class="chev" id="chev">▲ hide</span></h2>
     <div id="formWrap">
       <div class="form-grid">
-        <div class="field"><label>Your reference <span style="color:#c00000">*</span></label><input type="text" id="f_ownref" placeholder="Required — your job / FMS ref"></div>
+        <div class="field"><label>QT no. — from Sales <span style="color:#c00000">*</span></label><input type="text" id="f_ownref" placeholder="Sales quotation (QT) number"></div>
         <div class="field"><label>Date received</label><input type="date" id="f_date"></div>
         <div class="field col2"><label>Customer</label><input type="text" id="f_customer" list="customerList" placeholder="Customer name — past ones suggested"></div>
 
@@ -206,7 +206,7 @@
   </div>
 
   <div class="toolbar">
-    <input class="search" type="text" id="search" placeholder="Search ref, your ref, customer, description…">
+    <input class="search" type="text" id="search" placeholder="Search QT no., customer, description…">
     <select id="fStatus"><option value="">All statuses</option><option>New</option><option>Assigned</option><option>Booked</option><option>In Transit</option><option>Completed</option><option>On HOLD</option></select>
     <select id="fOwner"><option value="">All owners</option></select>
     <select id="fMode"><option value="">All modes</option><option>Air</option><option>Ocean</option><option>Road</option><option>Customs</option><option>Multi-modal</option></select>
@@ -219,7 +219,7 @@
   <div class="tablecard">
     <table>
       <thead><tr>
-        <th>Ref</th><th>Received</th><th>Customer</th><th>Sales</th><th>Mode</th>
+        <th>QT no.</th><th>Received</th><th>Customer</th><th>Sales</th><th>Mode</th>
         <th>Description</th><th>Route</th><th>OPS owner</th><th>Status</th><th>Tasks</th><th>Comments</th><th>Target</th><th></th>
       </tr></thead>
       <tbody id="rows"></tbody>
@@ -530,7 +530,7 @@ function wireUi(){
 }
 async function addHandover(){
   var oref=$("f_ownref").value.trim();
-  if(!oref){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="Your reference is required."; $("f_ownref").focus(); return; }
+  if(!oref){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="The Sales QT number is required."; $("f_ownref").focus(); return; }
   var cust=$("f_customer").value.trim();
   if(!cust){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="Customer is required."; return; }
   var owner=$("f_owner").value.trim(), status=$("f_status").value;
@@ -563,7 +563,7 @@ window.setStatus=async function(id,val){
 
 /* edit modal */
 var editId=null;
-var EF=[["own_ref","Your reference","text",1],["date_received","Date received","date",1],["customer","Customer","cust",2],
+var EF=[["own_ref","QT no. (from Sales)","text",1],["date_received","Date received","date",1],["customer","Customer","cust",2],
   ["sales_contact","Sales contact","sel-sales",1],["mode","Mode","sel-mode",1],["direction","Direction","sel-dir",1],["status","Status","sel-status",1],
   ["description","Shipment description","text",2],["origin","Origin (country)","country",1],["destination","Destination (country)","country",1],
   ["ops_owner","OPS owner","sel-owner",1],["target_etd","Target / ETD","date",1],["notes","Notes","text",2]];
@@ -586,7 +586,7 @@ function selHtml(id,opts,v){ var list=opts.slice(); if(v&&list.indexOf(v)<0) lis
 async function saveEdit(){
   var it=handovers.find(function(x){return x.id===editId;}); if(!it) return; var upd={};
   EF.forEach(function(f){ var el=$("e_"+f[0]); if(el){ var val=el.value; if(val==="—") val=""; upd[f[0]]=val||null; } });
-  if(!upd.own_ref){ toast("Your reference is required."); var er=$("e_own_ref"); if(er) er.focus(); return; }
+  if(!upd.own_ref){ toast("The Sales QT number is required."); var er=$("e_own_ref"); if(er) er.focus(); return; }
   if(upd.origin) upd.origin=normCountry(upd.origin);
   if(upd.destination) upd.destination=normCountry(upd.destination);
   if(upd.ops_owner&&upd.status==="New") upd.status="Assigned";
@@ -669,7 +669,7 @@ function closeComments(){ $("cmtBg").classList.remove("show"); }
 /* export */
 function exportCsv(){
   var cols=["own_ref","date_received","sales_contact","customer","mode","direction","description","origin","destination","ops_owner","status","target_etd","notes","comments"];
-  var head=["Ref","Received","Sales","Customer","Mode","Direction","Description","Origin","Destination","OPS owner","Status","Target/ETD","Notes","Comments","Tasks done/total"];
+  var head=["QT no.","Received","Sales","Customer","Mode","Direction","Description","Origin","Destination","OPS owner","Status","Target/ETD","Notes","Comments","Tasks done/total"];
   var rows=[head].concat(handovers.map(function(i){
     var tc=taskCounts(i.id);
     return cols.map(function(c){return i[c]||"";}).concat([tc.done+"/"+tc.total]);
