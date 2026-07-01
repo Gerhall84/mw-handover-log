@@ -185,8 +185,8 @@
         <div class="field"><label>Status</label><select id="f_status"><option>New</option><option>Assigned</option><option>Booked</option><option>In Transit</option><option>Completed</option><option>On HOLD</option></select></div>
 
         <div class="field col2"><label>Shipment description</label><input type="text" id="f_desc" placeholder="What is it?"></div>
-        <div class="field"><label>Origin (country)</label><input type="text" id="f_origin" list="countryList" placeholder="Type code or country"></div>
-        <div class="field"><label>Destination (country)</label><input type="text" id="f_dest" list="countryList" placeholder="Type code or country"></div>
+        <div class="field"><label>Origin (country)</label><input type="text" id="f_origin" class="country-ac" autocomplete="off" placeholder="Type code or country"></div>
+        <div class="field"><label>Destination (country)</label><input type="text" id="f_dest" class="country-ac" autocomplete="off" placeholder="Type code or country"></div>
 
         <div class="field"><label>OPS owner (operator)</label><select id="f_owner"></select></div>
         <div class="field"><label>Target / ETD</label><input type="date" id="f_eta"></div>
@@ -326,6 +326,47 @@ function normCountry(v){
 function esc(s){return (s==null?"":""+s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 function fmtDate(d){ if(!d) return ""; var p=(""+d).slice(0,10).split("-"); return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:d; }
 function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},1800); }
+
+/* ---------- country autocomplete (cross-browser, incl. Safari) ---------- */
+var acInput=null;
+var acBox=document.createElement("div");
+acBox.id="acBox";
+acBox.style.cssText="position:absolute;z-index:9999;background:#fff;border:1px solid #cdd6e2;border-radius:6px;box-shadow:0 6px 22px rgba(15,36,64,.18);max-height:250px;overflow:auto;display:none;min-width:230px;font-size:13px;font-family:Arial,Helvetica,sans-serif";
+document.body.appendChild(acBox);
+function acMatches(q){
+  q=(""+q).trim().toLowerCase();
+  if(!q) return COUNTRIES.slice(0,14);
+  var starts=[],has=[];
+  for(var i=0;i<COUNTRIES.length;i++){
+    var code=COUNTRIES[i][0].toLowerCase(), name=COUNTRIES[i][1].toLowerCase();
+    if(code.indexOf(q)===0||name.indexOf(q)===0) starts.push(COUNTRIES[i]);
+    else if(code.indexOf(q)>=0||name.indexOf(q)>=0) has.push(COUNTRIES[i]);
+  }
+  return starts.concat(has).slice(0,14);
+}
+function showAC(input){
+  acInput=input;
+  var m=acMatches(input.value);
+  if(!m.length){ acBox.style.display="none"; return; }
+  acBox.innerHTML=m.map(function(c){return '<div class="ac-item" data-code="'+c[0]+'" style="padding:8px 11px;cursor:pointer;border-bottom:1px solid #f0f2f5"><b style="color:#1F3864">'+esc(c[0])+'</b> &nbsp;'+esc(c[1])+'</div>';}).join("");
+  var r=input.getBoundingClientRect();
+  acBox.style.left=(r.left+window.scrollX)+"px";
+  acBox.style.top=(r.bottom+window.scrollY+2)+"px";
+  acBox.style.width=Math.max(r.width,230)+"px";
+  acBox.style.display="block";
+}
+document.addEventListener("input",function(e){ if(e.target.classList&&e.target.classList.contains("country-ac")) showAC(e.target); });
+document.addEventListener("focusin",function(e){ if(e.target.classList&&e.target.classList.contains("country-ac")) showAC(e.target); });
+acBox.addEventListener("mousedown",function(e){
+  var it=e.target.closest?e.target.closest(".ac-item"):null; if(!it||!acInput) return;
+  e.preventDefault();
+  acInput.value=it.getAttribute("data-code");
+  acBox.style.display="none";
+});
+acBox.addEventListener("mouseover",function(e){ var it=e.target.closest?e.target.closest(".ac-item"):null; if(it) it.style.background="#eef2f8"; });
+acBox.addEventListener("mouseout",function(e){ var it=e.target.closest?e.target.closest(".ac-item"):null; if(it) it.style.background="#fff"; });
+document.addEventListener("click",function(e){ if(e.target!==acInput && !acBox.contains(e.target)) acBox.style.display="none"; });
+document.addEventListener("keydown",function(e){ if(e.key==="Escape") acBox.style.display="none"; });
 
 /* ---------- boot ---------- */
 if(!SUPABASE_URL || !SUPABASE_ANON_KEY){
@@ -536,7 +577,7 @@ window.openEdit=function(id){
     else if(ty==="sel-sales") ctrl=selHtml("e_"+k,[""].concat(SALES),v);
     else if(ty==="sel-owner") ctrl=selHtml("e_"+k,[""].concat(OPERATORS),v);
     else if(ty==="cust") ctrl='<input id="e_'+k+'" list="customerList" value="'+esc(v)+'">';
-    else if(ty==="country") ctrl='<input id="e_'+k+'" list="countryList" value="'+esc(v)+'" placeholder="Type code or country">';
+    else if(ty==="country") ctrl='<input id="e_'+k+'" class="country-ac" autocomplete="off" value="'+esc(v)+'" placeholder="Type code or country">';
     else { var vv=(ty==="date")?(""+v).slice(0,10):v; ctrl='<input id="e_'+k+'" type="'+(ty==="date"?"date":"text")+'" value="'+esc(vv)+'">'; }
     return '<div class="field'+(sp===2?' col2':'')+'"><label>'+lab+'</label>'+ctrl+'</div>';
   }).join(""); $("modalBg").classList.add("show");
