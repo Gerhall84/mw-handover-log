@@ -183,9 +183,12 @@
 
 <div class="wrap">
   <div class="board-tabs">
-    <button class="board-tab active" id="tabHandover" onclick="switchBoard('handover')">Sales → OPS Handover</button>
-    <button class="board-tab" id="tabKeyacct" onclick="switchBoard('keyacct')">Key Account Shipments</button>
+    <button class="board-tab active" id="tabOverview" onclick="showTab('overview')">Overview</button>
+    <button class="board-tab" id="tabHandover" onclick="showTab('handover')">Sales → OPS Handover</button>
+    <button class="board-tab" id="tabKeyacct" onclick="showTab('keyacct')">Key Account Shipments</button>
   </div>
+  <div id="viewOverview"></div>
+  <div id="viewBoard" style="display:none">
   <div class="tiles">
     <div class="tile t-total"><div class="num" id="kTotal">0</div><div class="lbl">TOTAL LOGGED</div></div>
     <div class="tile t-unassigned"><div class="num" id="kUnassigned">0</div><div class="lbl">UNASSIGNED</div></div>
@@ -265,6 +268,7 @@
       <span id="emptyMsg">Use “Log a new handover” above to add the first shipment.</span>
     </div>
   </div>
+  </div><!-- /viewBoard -->
 
   <div class="footnote">
     <b>Shared &amp; live:</b> this app reads and writes to your Supabase database, so everyone sees the same list and it refreshes by itself. To put it in front of the team, host this file at a web address and pin that URL as a Website tab in your Teams channel.
@@ -554,7 +558,79 @@ function tableRows(){
   $("countNote").textContent=list.length+" of "+handovers.length+" shown";
   updateSortIndicators();
 }
-function renderAll(){ kpis(); charts(); refreshOwnerFilter(); refreshCustomerList(); tableRows(); }
+function renderAll(){ kpis(); charts(); refreshOwnerFilter(); refreshCustomerList(); tableRows(); if(currentView==="overview") renderOverview(); }
+var currentView="overview";
+window.showTab=function(t){
+  var isOv=(t==="overview");
+  currentView=isOv?"overview":"board";
+  $("tabOverview").classList.toggle("active",isOv);
+  $("viewOverview").style.display=isOv?"block":"none";
+  $("viewBoard").style.display=isOv?"none":"block";
+  if(isOv){ $("tabHandover").classList.remove("active"); $("tabKeyacct").classList.remove("active"); renderOverview(); }
+  else { switchBoard(t); }
+};
+function ovBoardLabel(b){ return (b||"handover")==="keyacct"?"Key Acct":"Handover"; }
+function renderOverview(){
+  var today=new Date().toISOString().slice(0,10);
+  var plus7=new Date(Date.now()+7*864e5).toISOString().slice(0,10);
+  var active=allRows.filter(function(x){return x.status!=="Completed";});
+  var dt=function(x){return x.target_etd?(""+x.target_etd).slice(0,10):"";};
+  var overdue=active.filter(function(x){var t=dt(x);return t&&t<today;}).sort(function(a,b){return dt(a)<dt(b)?-1:1;});
+  var dueSoon=active.filter(function(x){var t=dt(x);return t&&t>=today&&t<=plus7;}).sort(function(a,b){return dt(a)<dt(b)?-1:1;});
+  var unassigned=active.filter(function(x){return !x.ops_owner;});
+  var onhold=allRows.filter(function(x){return x.status==="On HOLD";});
+
+  function stats(b){
+    var rows=allRows.filter(function(x){return (x.board||"handover")===b;});
+    var open=rows.filter(function(x){return x.status!=="Completed";});
+    return {total:rows.length,open:open.length,
+      unassigned:open.filter(function(x){return !x.ops_owner;}).length,
+      overdue:open.filter(function(x){var t=dt(x);return t&&t<today;}).length};
+  }
+  function statCard(title,s){
+    function cell(n,l,c){ return '<div style="text-align:center;flex:1"><div style="font-size:26px;font-weight:bold;color:'+(c||"var(--navy)")+'">'+n+'</div><div style="font-size:10.5px;letter-spacing:.4px;color:var(--muted)">'+l+'</div></div>'; }
+    return '<div class="card"><h2>'+title+'</h2><div class="body"><div style="display:flex;gap:6px">'+
+      cell(s.total,"TOTAL")+cell(s.open,"OPEN")+cell(s.unassigned,"UNASSIGNED",s.unassigned?"#c00000":"var(--navy)")+cell(s.overdue,"OVERDUE",s.overdue?"#b00020":"var(--navy)")+'</div></div></div>';
+  }
+  function ovRow(x){
+    return '<tr style="cursor:pointer" onclick="openDetail(\''+x.id+'\')">'+
+      '<td class="ref" style="text-decoration:underline">'+esc(x.own_ref||"")+'</td>'+
+      '<td><span class="mode-tag">'+ovBoardLabel(x.board)+'</span></td>'+
+      '<td>'+esc(x.customer||"")+'</td>'+
+      '<td>'+(x.ops_owner?esc(x.ops_owner):'<span style="color:#c00000;font-weight:bold">— none —</span>')+'</td>'+
+      '<td>'+(x.target_etd?fmtDate(x.target_etd):"—")+'</td></tr>';
+  }
+  function listCard(title,rows,accent,empty){
+    var badge='<span style="background:'+accent+';color:#fff;border-radius:11px;padding:1px 9px;font-size:12px;margin-left:8px">'+rows.length+'</span>';
+    var body=rows.length
+      ? '<table><thead><tr><th>QT no.</th><th>Board</th><th>Customer</th><th>OPS owner</th><th>Target</th></tr></thead><tbody>'+rows.map(ovRow).join("")+'</tbody></table>'
+      : '<div style="padding:16px;color:var(--muted);font-size:13px">'+empty+'</div>';
+    return '<div class="card"><h2>'+title+badge+'</h2><div class="body" style="padding:0">'+body+'</div></div>';
+  }
+  var byOwner={}; active.forEach(function(x){ if(x.ops_owner) byOwner[x.ops_owner]=(byOwner[x.ops_owner]||0)+1; });
+  var owners=Object.keys(byOwner).sort(function(a,b){return byOwner[b]-byOwner[a];});
+  var maxO=owners.length?byOwner[owners[0]]:1;
+  var workload=owners.length? owners.map(function(o){
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:120px;font-size:12.5px">'+esc(o)+'</div>'+
+      '<div style="flex:1;background:#eef1f5;border-radius:5px;height:18px;overflow:hidden"><div style="width:'+Math.round(byOwner[o]/maxO*100)+'%;height:100%;background:var(--green-acc)"></div></div>'+
+      '<div style="width:26px;text-align:right;font-weight:bold;font-size:12.5px">'+byOwner[o]+'</div></div>';
+  }).join("") : '<div style="color:var(--muted);font-size:13px">No open shipments assigned.</div>';
+
+  $("viewOverview").innerHTML=
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:6px">'+
+      statCard("Sales → OPS Handover",stats("handover"))+
+      statCard("Key Account Shipments",stats("keyacct"))+
+    '</div>'+
+    listCard("Overdue",overdue,"#b00020","Nothing overdue — all on track.")+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">'+
+      listCard("Due within 7 days",dueSoon,"#b7791f","Nothing due in the next week.")+
+      listCard("Unassigned",unassigned,"#c00000","Everything has an OPS owner.")+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">'+
+      listCard("On HOLD",onhold,"#6b7785","Nothing on hold.")+
+      '<div class="card"><h2>Open shipments by owner</h2><div class="body">'+workload+'</div></div>'+
+    '</div>';
+}
 window.switchBoard=function(b){
   if(!BOARDS[b]) return;
   currentBoard=b;
@@ -607,7 +683,7 @@ function clearForm(){
   $("f_date").value=new Date().toISOString().slice(0,10); $("f_status").value="New";
 }
 window.delItem=async function(id){
-  var it=handovers.find(function(x){return x.id===id;}); if(!it) return;
+  var it=allRows.find(function(x){return x.id===id;}); if(!it) return;
   if(!confirm("Delete "+(it.own_ref?it.own_ref+" — ":"")+it.customer+"?")) return;
   var r=await sb.from("handovers").delete().eq("id",id);
   if(r.error){ toast("Error: "+r.error.message); return; }
@@ -626,7 +702,7 @@ var EF=[["own_ref","QT no. (from Sales)","text",1],["file_ref","File ref (IE)","
   ["description","Shipment description","text",2],["origin","Origin (country)","country",1],["destination","Destination (country)","country",1],
   ["ops_owner","OPS owner","sel-owner",1],["target_etd","Target / ETD","date",1],["notes","Notes","text",2]];
 window.openEdit=function(id){
-  var it=handovers.find(function(x){return x.id===id;}); if(!it) return; editId=id;
+  var it=allRows.find(function(x){return x.id===id;}); if(!it) return; editId=id;
   $("editGrid").innerHTML=EF.map(function(f){
     var k=f[0],lab=f[1],ty=f[2],sp=f[3],v=it[k]||"",ctrl;
     if(ty==="sel-mode") ctrl=selHtml("e_"+k,["","Air","Ocean","Road","Customs","Multi-modal"],v);
@@ -643,7 +719,7 @@ window.openEdit=function(id){
 };
 function selHtml(id,opts,v){ var list=opts.slice(); if(v&&list.indexOf(v)<0) list=[v].concat(list); return '<select id="'+id+'">'+list.map(function(o){return '<option'+(o===v?' selected':'')+'>'+(o||"—")+'</option>';}).join("")+'</select>'; }
 async function saveEdit(){
-  var it=handovers.find(function(x){return x.id===editId;}); if(!it) return; var upd={};
+  var it=allRows.find(function(x){return x.id===editId;}); if(!it) return; var upd={};
   EF.forEach(function(f){ var el=$("e_"+f[0]); if(el){ var val=el.value; if(val==="—") val=""; upd[f[0]]=val||null; } });
   if(!upd.own_ref){ toast("The Sales QT number is required."); var er=$("e_own_ref"); if(er) er.focus(); return; }
   if(upd.origin) upd.origin=normCountry(upd.origin);
@@ -659,7 +735,7 @@ function closeEdit(){ $("modalBg").classList.remove("show"); }
 var cmtHid=null;
 function myName(){ try{ return localStorage.getItem("mw_me")||""; }catch(e){ return ""; } }
 window.openComments=function(id){
-  cmtHid=id; var it=handovers.find(function(x){return x.id===id;});
+  cmtHid=id; var it=allRows.find(function(x){return x.id===id;});
   $("cmtTitle").innerHTML='Comments — '+esc(it&&it.own_ref?it.own_ref+" · ":"")+esc(it?it.customer:"")+' <span class="x" id="cmtCloseI">✕</span>';
   $("cmtCloseI").onclick=closeComments;
   var me=myName();
@@ -667,7 +743,7 @@ window.openComments=function(id){
   renderComments(); $("cmtBg").classList.add("show"); $("c_text").focus();
 };
 function renderComments(){
-  var it=handovers.find(function(x){return x.id===cmtHid;});
+  var it=allRows.find(function(x){return x.id===cmtHid;});
   var lines=(it&&it.comments)?it.comments.split("\n").filter(function(l){return l.trim();}):[];
   $("cmtList").innerHTML = lines.length ? lines.map(function(l){
     var m=l.match(/^(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2} · [^—]+)— (.*)$/);
@@ -682,7 +758,7 @@ async function addComment(){
   var d=new Date();
   var stamp=String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
   var line=stamp+" · "+(who||"—")+" — "+txt;
-  var it=handovers.find(function(x){return x.id===cmtHid;});
+  var it=allRows.find(function(x){return x.id===cmtHid;});
   var existing=(it&&it.comments)?it.comments:"";
   var updated=line+(existing?"\n"+existing:"");           // newest first
   var r=await sb.from("handovers").update({comments:updated}).eq("id",cmtHid);
@@ -696,7 +772,7 @@ var detailId=null;
 window.openDetail=function(id){ detailId=id; renderDetail(); $("drawer").classList.add("show"); $("drawerBg").classList.add("show"); };
 window.closeDetail=function(){ $("drawer").classList.remove("show"); $("drawerBg").classList.remove("show"); detailId=null; };
 window.moveBoard=async function(id){
-  var it=handovers.find(function(x){return x.id===id;}); if(!it) return;
+  var it=allRows.find(function(x){return x.id===id;}); if(!it) return;
   var to=(it.board||"handover")==="handover"?"keyacct":"handover";
   var toLabel=to==="keyacct"?"Key Account Shipments":"Sales → OPS Handover";
   if(!confirm("Move "+(it.own_ref||it.customer||"this shipment")+" to “"+toLabel+"”?")) return;
@@ -706,7 +782,7 @@ window.moveBoard=async function(id){
 };
 function refreshDetailIfOpen(){ if(detailId && $("drawer").classList.contains("show")){ if($("drawer").contains(document.activeElement)) return; renderDetail(); } }
 function renderDetail(){
-  var i=handovers.find(function(x){return x.id===detailId;}); if(!i){ window.closeDetail(); return; }
+  var i=allRows.find(function(x){return x.id===detailId;}); if(!i){ window.closeDetail(); return; }
   $("drawerHead").innerHTML='<div><div style="font-size:16px;font-weight:bold">'+esc(i.own_ref||"(no QT)")+'</div>'+
     '<div style="font-size:12px;color:#c7d4ea">File ref: '+esc(i.file_ref||"—")+'  ·  '+esc(i.customer||"")+'</div></div>'+
     '<span class="x" onclick="closeDetail()">✕</span>';
@@ -733,7 +809,7 @@ window.dAddComment=async function(){
   var who=$("d_cauthor").value.trim(); if(who){ try{ localStorage.setItem("mw_me",who); }catch(e){} }
   var d=new Date(); var stamp=String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
   var line=stamp+" · "+(who||"—")+" — "+txt;
-  var it=handovers.find(function(x){return x.id===detailId;}); var existing=(it&&it.comments)?it.comments:"";
+  var it=allRows.find(function(x){return x.id===detailId;}); var existing=(it&&it.comments)?it.comments:"";
   var r=await sb.from("handovers").update({comments:line+(existing?"\n"+existing:"")}).eq("id",detailId);
   if(r.error){ toast("Error: "+r.error.message); return; }
   await loadAll();
