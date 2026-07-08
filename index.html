@@ -49,6 +49,9 @@
   .board-tab{background:none;border:none;padding:11px 20px;font:inherit;font-size:14px;font-weight:bold;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;border-radius:6px 6px 0 0}
   .board-tab:hover{background:#f4f6f9}
   .board-tab.active{color:var(--navy);border-bottom-color:var(--green-acc);background:#f4f6f9}
+  th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
+  th.sortable:hover{color:var(--green-acc)}
+  .srt{margin-left:4px;font-size:10px;color:var(--green-acc)}
   .card{background:#fff;border:1px solid var(--line);border-radius:6px;overflow:hidden}
   .card h2{font-size:13px;margin:0;padding:11px 16px;background:var(--green);color:#fff;letter-spacing:.4px}
   .card .body{padding:14px 16px}
@@ -230,6 +233,8 @@
     <select id="fStatus"><option value="">All statuses</option><option>New</option><option>Assigned</option><option>Booked</option><option>In Transit</option><option>Completed</option><option>On HOLD</option></select>
     <select id="fOwner"><option value="">All owners</option></select>
     <select id="fMode"><option value="">All modes</option><option>Air</option><option>Ocean</option><option>Road</option><option>Customs</option><option>Multi-modal</option></select>
+    <select id="fDir"><option value="">All directions</option><option>Import</option><option>Export</option><option>Cross-trade</option><option>Domestic</option></select>
+    <select id="fSales"><option value="">All sales</option></select>
     <select id="meSelect" title="Who you are (for ‘Mine only’)"><option value="">You…</option></select>
     <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="fMine">Mine only</label>
     <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="fHideDone">Hide completed</label>
@@ -239,8 +244,19 @@
   <div class="tablecard">
     <table>
       <thead><tr>
-        <th>QT no.</th><th>File ref</th><th>Received</th><th>Customer</th><th>Sales</th><th>Mode</th>
-        <th>Description</th><th>Route</th><th>OPS owner</th><th>Status</th><th>Comments</th><th>Target</th><th></th>
+        <th class="sortable" onclick="sortBy('own_ref')">QT no.<span class="srt" data-k="own_ref"></span></th>
+        <th class="sortable" onclick="sortBy('file_ref')">File ref<span class="srt" data-k="file_ref"></span></th>
+        <th class="sortable" onclick="sortBy('date_received')">Received<span class="srt" data-k="date_received"></span></th>
+        <th class="sortable" onclick="sortBy('customer')">Customer<span class="srt" data-k="customer"></span></th>
+        <th class="sortable" onclick="sortBy('sales_contact')">Sales<span class="srt" data-k="sales_contact"></span></th>
+        <th class="sortable" onclick="sortBy('mode')">Mode<span class="srt" data-k="mode"></span></th>
+        <th class="sortable" onclick="sortBy('description')">Description<span class="srt" data-k="description"></span></th>
+        <th class="sortable" onclick="sortBy('origin')">Route<span class="srt" data-k="origin"></span></th>
+        <th class="sortable" onclick="sortBy('ops_owner')">OPS owner<span class="srt" data-k="ops_owner"></span></th>
+        <th class="sortable" onclick="sortBy('status')">Status<span class="srt" data-k="status"></span></th>
+        <th>Comments</th>
+        <th class="sortable" onclick="sortBy('target_etd')">Target<span class="srt" data-k="target_etd"></span></th>
+        <th></th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
@@ -483,18 +499,34 @@ function statusSelect(i){
   return '<select class="status-select" style="background:'+clr[0]+';color:'+clr[1]+'" onchange="setStatus(\''+i.id+'\',this.value)">'+
     opts.map(function(o){return '<option style="background:#fff;color:var(--ink)"'+(o===i.status?' selected':'')+'>'+esc(o)+'</option>';}).join("")+'</select>';
 }
+var sortKey=null, sortDir=1;
+window.sortBy=function(k){ if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=1; } tableRows(); };
+function updateSortIndicators(){
+  var spans=document.querySelectorAll(".srt");
+  for(var i=0;i<spans.length;i++){ var k=spans[i].getAttribute("data-k"); spans[i].textContent=(sortKey===k)?(sortDir>0?"▲":"▼"):""; }
+}
 function tableRows(){
-  var q=$("search").value.toLowerCase().trim(),fs=$("fStatus").value,fo=$("fOwner").value,fm=$("fMode").value;
+  var q=$("search").value.toLowerCase().trim(),fs=$("fStatus").value,fo=$("fOwner").value,fm=$("fMode").value,fd=$("fDir").value,fsl=$("fSales").value;
   var hideDone=$("fHideDone").checked, mine=$("fMine").checked, me=$("meSelect").value;
   var list=handovers.filter(function(i){
     if(fs&&i.status!==fs) return false;
     if(fo&&i.ops_owner!==fo) return false;
     if(fm&&i.mode!==fm) return false;
+    if(fd&&i.direction!==fd) return false;
+    if(fsl&&i.sales_contact!==fsl) return false;
     if(hideDone&&i.status==="Completed") return false;
     if(mine){ if(!me||i.ops_owner!==me) return false; }
     if(q){ var hay=((i.ref||"")+" "+(i.own_ref||"")+" "+(i.file_ref||"")+" "+(i.customer||"")+" "+(i.description||"")+" "+(i.sales_contact||"")+" "+(i.origin||"")+" "+(i.destination||"")+" "+(i.comments||"")).toLowerCase(); if(hay.indexOf(q)<0) return false; }
     return true;
   });
+  if(sortKey){
+    list.sort(function(a,b){
+      var av=a[sortKey],bv=b[sortKey];
+      av=(av==null?"":(""+av)).toLowerCase(); bv=(bv==null?"":(""+bv)).toLowerCase();
+      if(av===""&&bv!=="") return 1; if(bv===""&&av!=="") return -1;
+      if(av<bv) return -sortDir; if(av>bv) return sortDir; return 0;
+    });
+  }
   $("emptyState").style.display=handovers.length===0?"block":"none";
   $("rows").innerHTML=list.map(function(i){
     var clr=STATUS_CLR[i.status]||["#eee","#333"];
@@ -520,6 +552,7 @@ function tableRows(){
       '<button class="btn btn-danger btn-sm" onclick="delItem(\''+i.id+'\')">Del</button></td></tr>';
   }).join("");
   $("countNote").textContent=list.length+" of "+handovers.length+" shown";
+  updateSortIndicators();
 }
 function renderAll(){ kpis(); charts(); refreshOwnerFilter(); refreshCustomerList(); tableRows(); }
 window.switchBoard=function(b){
@@ -542,7 +575,8 @@ window.switchBoard=function(b){
 function wireUi(){
   $("addBtn").onclick=addHandover;
   $("clearForm").onclick=clearForm;
-  ["search","fStatus","fOwner","fMode","fHideDone","fMine","meSelect"].forEach(function(id){ $(id).addEventListener("input",tableRows); $(id).addEventListener("change",tableRows); });
+  ["search","fStatus","fOwner","fMode","fDir","fSales","fHideDone","fMine","meSelect"].forEach(function(id){ $(id).addEventListener("input",tableRows); $(id).addEventListener("change",tableRows); });
+  $("fSales").innerHTML='<option value="">All sales</option>'+SALES.map(function(s){return '<option>'+esc(s)+'</option>';}).join("");
   $("meSelect").addEventListener("change",function(){ try{ localStorage.setItem("mw_me",this.value); }catch(e){} });
   $("toggleForm").onclick=function(){ var w=$("formWrap"),hid=w.style.display==="none"; w.style.display=hid?"block":"none"; $("chev").textContent=hid?"▲ hide":"▼ show"; };
   $("modalClose").onclick=closeEdit; $("cancelEdit").onclick=closeEdit; $("saveEdit").onclick=saveEdit;
@@ -588,7 +622,7 @@ window.setStatus=async function(id,val){
 /* edit modal */
 var editId=null;
 var EF=[["own_ref","QT no. (from Sales)","text",1],["file_ref","File ref (IE)","text",1],["date_received","Date received","date",1],["customer","Customer","cust",2],
-  ["sales_contact","Sales contact","sel-sales",1],["mode","Mode","sel-mode",1],["direction","Direction","sel-dir",1],["status","Status","sel-status",1],
+  ["sales_contact","Sales contact","sel-sales",1],["mode","Mode","sel-mode",1],["direction","Direction","sel-dir",1],["status","Status","sel-status",1],["board","List","sel-board",1],
   ["description","Shipment description","text",2],["origin","Origin (country)","country",1],["destination","Destination (country)","country",1],
   ["ops_owner","OPS owner","sel-owner",1],["target_etd","Target / ETD","date",1],["notes","Notes","text",2]];
 window.openEdit=function(id){
@@ -596,6 +630,7 @@ window.openEdit=function(id){
   $("editGrid").innerHTML=EF.map(function(f){
     var k=f[0],lab=f[1],ty=f[2],sp=f[3],v=it[k]||"",ctrl;
     if(ty==="sel-mode") ctrl=selHtml("e_"+k,["","Air","Ocean","Road","Customs","Multi-modal"],v);
+    else if(ty==="sel-board"){ var bv=it.board||"handover"; ctrl='<select id="e_board"><option value="handover"'+(bv==="handover"?" selected":"")+'>Sales → OPS Handover</option><option value="keyacct"'+(bv==="keyacct"?" selected":"")+'>Key Account Shipments</option></select>'; }
     else if(ty==="sel-dir") ctrl=selHtml("e_"+k,["","Import","Export","Cross-trade","Domestic"],v);
     else if(ty==="sel-status") ctrl=selHtml("e_"+k,STATUSES,v);
     else if(ty==="sel-sales") ctrl=selHtml("e_"+k,[""].concat(SALES),v);
@@ -660,6 +695,15 @@ function closeComments(){ $("cmtBg").classList.remove("show"); }
 var detailId=null;
 window.openDetail=function(id){ detailId=id; renderDetail(); $("drawer").classList.add("show"); $("drawerBg").classList.add("show"); };
 window.closeDetail=function(){ $("drawer").classList.remove("show"); $("drawerBg").classList.remove("show"); detailId=null; };
+window.moveBoard=async function(id){
+  var it=handovers.find(function(x){return x.id===id;}); if(!it) return;
+  var to=(it.board||"handover")==="handover"?"keyacct":"handover";
+  var toLabel=to==="keyacct"?"Key Account Shipments":"Sales → OPS Handover";
+  if(!confirm("Move "+(it.own_ref||it.customer||"this shipment")+" to “"+toLabel+"”?")) return;
+  var r=await sb.from("handovers").update({board:to}).eq("id",id);
+  if(r.error){ toast("Error: "+r.error.message); return; }
+  window.closeDetail(); toast("Moved to "+toLabel); loadAll();
+};
 function refreshDetailIfOpen(){ if(detailId && $("drawer").classList.contains("show")){ if($("drawer").contains(document.activeElement)) return; renderDetail(); } }
 function renderDetail(){
   var i=handovers.find(function(x){return x.id===detailId;}); if(!i){ window.closeDetail(); return; }
@@ -675,7 +719,8 @@ function renderDetail(){
     fld("OPS owner",i.ops_owner)+fld("Route",route)+'</div>'+
     '<div class="dl" style="margin-top:6px">Description</div><div class="dv">'+(i.description?esc(i.description):"—")+'</div>'+
     '<div class="dl" style="margin-top:6px">Notes</div><div class="dv">'+(i.notes?esc(i.notes):"—")+'</div>'+
-    '<div style="margin-top:10px"><button class="btn btn-light btn-sm" style="border:1px solid var(--line)" onclick="openEdit(\''+i.id+'\')">Edit all fields</button></div>';
+    '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-light btn-sm" style="border:1px solid var(--line)" onclick="openEdit(\''+i.id+'\')">Edit all fields</button>'+
+    '<button class="btn btn-light btn-sm" style="border:1px solid var(--line)" onclick="moveBoard(\''+i.id+'\')">Move to '+((i.board||"handover")==="handover"?"Key Accounts":"Sales Handover")+'</button></div>';
   var lines=(i.comments||"").split("\n").filter(function(l){return l.trim();});
   html+='<div class="dsec">Comments</div>';
   html+=lines.length?lines.map(function(l){ var m=l.match(/^(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2} · [^—]+)— (.*)$/); var meta=m?m[1].trim():""; var body=m?m[2]:l; return '<div class="task-item"><span class="ttext">'+esc(body)+'<br><span class="tmeta">'+esc(meta)+'</span></span></div>'; }).join(""):'<div style="color:var(--muted);font-size:12.5px;padding:4px 0">No notes yet.</div>';
