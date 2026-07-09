@@ -187,11 +187,26 @@
 </header>
 
 <div class="wrap">
-  <div class="board-tabs">
+  <div class="board-tabs" style="flex-wrap:wrap">
     <button class="board-tab active" id="tabOverview" onclick="showTab('overview')">Manager Overview</button>
     <button class="board-tab" id="tabHandover" onclick="showTab('handover')">BD Handovers</button>
     <button class="board-tab" id="tabKeyacct" onclick="showTab('keyacct')">In-house Accounts</button>
     <button class="board-tab" id="tabOcean" onclick="showTab('ocean')">Ocean Imports</button>
+    <button class="board-tab" id="tabOcean_export" onclick="showTab('ocean_export')">Ocean Exports</button>
+    <button class="board-tab" id="tabAir_import" onclick="showTab('air_import')">Air Imports</button>
+    <button class="board-tab" id="tabAir_export" onclick="showTab('air_export')">Air Exports</button>
+    <button class="board-tab" id="tabRoad" onclick="showTab('road')">Road</button>
+    <button class="board-tab" id="tabCustoms" onclick="showTab('customs')">Customs</button>
+  </div>
+  <div id="fmsCard" class="card" style="margin-bottom:14px">
+    <h2>Import daily FMS file</h2>
+    <div class="body">
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div class="field" style="max-width:300px;margin:0"><label>FMS export (.xlsx)</label><input type="file" id="fms_file" accept=".xlsx,.xls"></div>
+        <button class="btn btn-light" id="fms_read">Read file</button>
+      </div>
+      <div id="fms_preview" style="margin-top:12px;font-size:13px"></div>
+    </div>
   </div>
   <div id="viewOverview"></div>
   <div id="viewBoard" style="display:none">
@@ -217,10 +232,12 @@
 
         <div class="field"><label>OPS owner (operator)</label><select id="f_owner"></select></div>
         <div class="field"><label>Target / ETD</label><input type="date" id="f_eta"></div>
+        <div class="field"><label>Collection haulier</label><input type="text" id="f_colhaul" list="haulierList" placeholder="Who collects"></div>
+        <div class="field"><label>Delivery haulier</label><input type="text" id="f_delhaul" list="haulierList" placeholder="Who delivers"></div>
         <div class="field col2"><label>Notes</label><input type="text" id="f_notes"></div>
       </div>
       <div class="form-actions">
-        <button class="btn btn-green" id="addBtn">Add handover</button>
+        <button class="btn btn-green" id="addBtn">Add</button>
         <button class="btn btn-light" id="clearForm" style="border:1px solid var(--line)">Clear</button>
         <span class="form-msg" id="formMsg"></span>
       </div>
@@ -306,12 +323,14 @@
 
 <datalist id="ownerList"></datalist>
 <datalist id="customerList"></datalist>
+<datalist id="haulierList"></datalist>
 <datalist id="countryList"></datalist>
 <div class="drawer-bg" id="drawerBg" onclick="closeDetail()"></div>
 <aside class="drawer" id="drawer"><div class="dh" id="drawerHead"></div><div class="db" id="drawerBody"></div></aside>
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 /* ============================================================
    CONFIG — set these once, then host the file.
@@ -330,18 +349,33 @@ try{
 var $=function(id){return document.getElementById(id);};
 var sb=null, handovers=[], allRows=[], currentBoard="handover";
 var BOARDS={
-  handover:{ title:"BD Handovers", strip:"Log every shipment handed over by the BD team. Rows with no OPS owner show in red until someone takes them.", add:"+ Log a BD handover", emptyTitle:"No BD handovers logged yet", empty:"Use “Log a BD handover” above to add the first shipment." },
-  keyacct:{ title:"In-house Accounts", strip:"Track shipments for in-house accounts. Rows with no OPS owner show in red until someone takes them.", add:"+ Log an in-house shipment", emptyTitle:"No in-house shipments logged yet", empty:"Use “Log an in-house shipment” above to add the first one." },
-  ocean:{ title:"Ocean Imports", strip:"Track ocean import shipments by MBL. Rows with no OPS owner show in red until someone takes them.", add:"+ Log an ocean import", emptyTitle:"No ocean imports logged yet", empty:"Use “Log an ocean import” above to add the first one." }
+  handover:{ title:"BD Handovers", strip:"Log every shipment handed over by the BD team. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No BD handovers logged yet", empty:"Use Add above to log the first shipment." },
+  keyacct:{ title:"In-house Accounts", strip:"Track shipments for in-house accounts. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No in-house shipments logged yet", empty:"Use Add above to log the first one." },
+  ocean:{ title:"Ocean Imports", strip:"Track ocean import shipments by MBL. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No ocean imports logged yet", empty:"Use Add above to log the first one." },
+  ocean_export:{ title:"Ocean Exports", strip:"Track ocean export shipments by MBL. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No ocean exports logged yet", empty:"Use Add above to log the first one." },
+  air_import:{ title:"Air Imports", strip:"Track air import shipments. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No air imports logged yet", empty:"Use Add above to log the first one." },
+  air_export:{ title:"Air Exports", strip:"Track air export shipments. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No air exports logged yet", empty:"Use Add above to log the first one." },
+  road:{ title:"Road", strip:"Track road freight jobs. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No road jobs logged yet", empty:"Use Add above to log the first one." },
+  customs:{ title:"Customs", strip:"Track customs jobs. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No customs jobs logged yet", empty:"Use Add above to log the first one." }
+};
+var BOARD_CFG={
+  handover:{ref:"QT no. — from Sales",refPh:"Sales quotation (QT) number",hdr:"QT no.",geo:"country",mode:null,dir:null,ctype:false},
+  keyacct:{ref:"QT no. — from Sales",refPh:"Sales quotation (QT) number",hdr:"QT no.",geo:"country",mode:null,dir:null,ctype:false},
+  ocean:{ref:"MBL Number",refPh:"Master B/L number",hdr:"MBL Number",geo:"port-in",mode:"Ocean",dir:"Import",ctype:true},
+  ocean_export:{ref:"MBL Number",refPh:"Master B/L number",hdr:"MBL Number",geo:"port-out",mode:"Ocean",dir:"Export",ctype:true},
+  air_import:{ref:"AWB Number",refPh:"Air waybill number",hdr:"AWB Number",geo:"country",mode:"Air",dir:"Import",ctype:false},
+  air_export:{ref:"AWB Number",refPh:"Air waybill number",hdr:"AWB Number",geo:"country",mode:"Air",dir:"Export",ctype:false},
+  road:{ref:"Reference",refPh:"Job / consignment ref",hdr:"Ref",geo:"country",mode:"Road",dir:null,ctype:false},
+  customs:{ref:"Reference",refPh:"Entry / job ref",hdr:"Ref",geo:"country",mode:"Customs",dir:null,ctype:false}
 };
 
 var STATUSES=["New","Assigned","Booked","In Transit","Completed","On HOLD"];
-var SALES=["Gary","Ger","Eoin","Natacha","Ashley","Tea"];
-var OPERATORS=["Ger","Ashley","Dominic","Roisin","Lee","Allanah","Tea","Lisa","Damian","Ciara","Jason"];
+var SALES=["Gary","Ger","Eoin","Natacha","Ashley","Tea","N/A"];
+var OPERATORS=["Ger","Ashley","Dominic","Roisin","Lee","Allanah","Tea","Lisa","Damian","Ciara","Jason","Marese","Flaviu"];
 var PORTS_DEPART=["Rotterdam","Antwerp","Zeebrugge","Hamburg","Bremerhaven","Felixstowe","Southampton","London Gateway","Liverpool","Le Havre","Dunkirk","Algeciras","Valencia","Barcelona","Genoa","Piraeus","Shanghai","Ningbo","Shenzhen","Qingdao","Singapore","Port Klang","Busan","New York/NJ","Savannah","Norfolk","Montreal"];
 var PORTS_ARRIVE=["Dublin","Cork","Belfast"];
 var CTYPES=["FCL","LCL"];
-var BOARD_NAMES={handover:"BD Handovers",keyacct:"In-house Accounts",ocean:"Ocean Imports"};
+var BOARD_NAMES={handover:"BD Handovers",keyacct:"In-house Accounts",ocean:"Ocean Imports",ocean_export:"Ocean Exports",air_import:"Air Imports",air_export:"Air Exports",road:"Road",customs:"Customs"};
 var STATUS_CLR={
   "New":["var(--new)","var(--new-t)"],"Assigned":["var(--asgn)","var(--asgn-t)"],
   "Booked":["var(--book)","var(--book-t)"],"In Transit":["var(--prog)","var(--prog-t)"],
@@ -497,6 +531,8 @@ function refreshOwnerFilter(){
 function refreshCustomerList(){
   var cs={}; handovers.forEach(function(i){ if(i.customer) cs[i.customer]=1; });
   $("customerList").innerHTML=Object.keys(cs).sort().map(function(c){return '<option>'+esc(c)+'</option>';}).join("");
+  var hs={}; allRows.forEach(function(i){ if(i.collection_haulier) hs[i.collection_haulier]=1; if(i.delivery_haulier) hs[i.delivery_haulier]=1; });
+  if($("haulierList")) $("haulierList").innerHTML=Object.keys(hs).sort().map(function(c){return '<option>'+esc(c)+'</option>';}).join("");
 }
 function statusSelect(i){
   var clr=STATUS_CLR[i.status]||["#e8edf5","var(--navy)"];
@@ -570,11 +606,12 @@ window.showTab=function(t){
   currentView=isOv?"overview":"board";
   $("tabOverview").classList.toggle("active",isOv);
   $("viewOverview").style.display=isOv?"block":"none";
+  if($("fmsCard")) $("fmsCard").style.display=isOv?"block":"none";
   $("viewBoard").style.display=isOv?"none":"block";
-  if(isOv){ $("tabHandover").classList.remove("active"); $("tabKeyacct").classList.remove("active"); $("tabOcean").classList.remove("active"); $("boardTitle").textContent="Manager Overview"; $("stripText").textContent="Live view across BD Handovers, In-house Accounts and Ocean Import shipments."; renderOverview(); }
+  if(isOv){ Object.keys(BOARD_NAMES).forEach(function(k){ var el=$("tab"+k.charAt(0).toUpperCase()+k.slice(1)); if(el) el.classList.remove("active"); }); $("boardTitle").textContent="Manager Overview"; $("stripText").textContent="Live view across all boards."; renderOverview(); }
   else { switchBoard(t); }
 };
-function ovBoardLabel(b){ return b==="keyacct"?"In-house":(b==="ocean"?"Ocean":"BD"); }
+function ovBoardLabel(b){ return {handover:"BD",keyacct:"In-house",ocean:"Ocean Imp",ocean_export:"Ocean Exp",air_import:"Air Imp",air_export:"Air Exp",road:"Road",customs:"Customs"}[b]||"BD"; }
 function renderOverview(){
   var today=new Date().toISOString().slice(0,10);
   var plus3=new Date(Date.now()+3*864e5).toISOString().slice(0,10);
@@ -637,16 +674,13 @@ function renderOverview(){
   $("viewOverview").innerHTML=
     strip+brk+
     listCard("Overdue",overdue,"#b00020","Nothing overdue — all on track.")+
-    listCard("Due within 3 days",dueSoon,"#b7791f","Nothing due in the next 3 days.")+
-    listCard("Unassigned",unassigned,"#c00000","Everything has an OPS owner.")+
     '<div class="card"><h2>Open shipments by owner</h2><div class="body">'+workload+'</div></div>';
 }
 window.switchBoard=function(b){
   if(!BOARDS[b]) return;
   currentBoard=b;
-  $("tabHandover").classList.toggle("active",b==="handover");
-  $("tabKeyacct").classList.toggle("active",b==="keyacct");
-  $("tabOcean").classList.toggle("active",b==="ocean");
+  $("tabOverview").classList.remove("active");
+  Object.keys(BOARD_NAMES).forEach(function(k){ var el=$("tab"+k.charAt(0).toUpperCase()+k.slice(1)); if(el) el.classList.toggle("active",k===b); });
   applyBoardForm(b);
   var cfg=BOARDS[b];
   $("boardTitle").textContent=cfg.title;
@@ -659,26 +693,102 @@ window.switchBoard=function(b){
   renderAll();
 };
 function applyBoardForm(b){
-  var ocean=(b==="ocean");
-  $("lbl_ownref").innerHTML=(ocean?"MBL Number":"QT no. — from Sales")+' <span style="color:#c00000">*</span>';
-  $("f_ownref").placeholder=ocean?"Master B/L number":"Sales quotation (QT) number";
-  if($("hdr_ownref")) $("hdr_ownref").textContent=ocean?"MBL Number":"QT no.";
-  $("fld_mode").style.display=ocean?"none":"";
-  $("fld_direction").style.display=ocean?"none":"";
-  $("fld_ctype").style.display=ocean?"":"none";
-  if(ocean){
-    $("fld_origin").innerHTML='<label>Departure port</label><select id="f_origin"><option value="">—</option>'+PORTS_DEPART.map(function(p){return '<option>'+esc(p)+'</option>';}).join("")+'</select>';
-    $("fld_dest").innerHTML='<label>Arrival port (Ireland)</label><select id="f_dest"><option value="">—</option>'+PORTS_ARRIVE.map(function(p){return '<option>'+esc(p)+'</option>';}).join("")+'</select>';
+  var cfg=BOARD_CFG[b]||BOARD_CFG.handover;
+  $("lbl_ownref").innerHTML=cfg.ref+' <span style="color:#c00000">*</span>';
+  $("f_ownref").placeholder=cfg.refPh;
+  if($("hdr_ownref")) $("hdr_ownref").textContent=cfg.hdr;
+  $("fld_mode").style.display=cfg.mode?"none":"";
+  $("fld_direction").style.display=cfg.dir?"none":"";
+  $("fld_ctype").style.display=cfg.ctype?"":"none";
+  if(cfg.geo==="port-in" || cfg.geo==="port-out"){
+    var origins=cfg.geo==="port-in"?PORTS_DEPART:PORTS_ARRIVE;
+    var dests=cfg.geo==="port-in"?PORTS_ARRIVE:PORTS_DEPART;
+    var oLbl=cfg.geo==="port-in"?"Departure port":"Departure port (Ireland)";
+    var dLbl=cfg.geo==="port-in"?"Arrival port (Ireland)":"Arrival port";
+    $("fld_origin").innerHTML='<label>'+oLbl+'</label><select id="f_origin"><option value="">—</option>'+origins.map(function(p){return '<option>'+esc(p)+'</option>';}).join("")+'</select>';
+    $("fld_dest").innerHTML='<label>'+dLbl+'</label><select id="f_dest"><option value="">—</option>'+dests.map(function(p){return '<option>'+esc(p)+'</option>';}).join("")+'</select>';
   } else {
     $("fld_origin").innerHTML='<label>Origin (country)</label><input type="text" id="f_origin" class="country-ac" autocomplete="off" placeholder="Type code or country">';
     $("fld_dest").innerHTML='<label>Destination (country)</label><input type="text" id="f_dest" class="country-ac" autocomplete="off" placeholder="Type code or country">';
   }
 }
 
+/* ---------- FMS daily import ---------- */
+var fmsParsed=null;
+function fmsDate(s){ if(!s) return null; s=(""+s).trim(); var m=s.match(/^(\d{2})\.(\d{2})\.(\d{4})/); if(m) return m[3]+"-"+m[2]+"-"+m[1]; if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10); return null; }
+function fmsLoc(s){ if(!s) return null; s=(""+s).trim(); if(!s) return null; var i=s.indexOf(" - "); return i>=0? s.slice(i+3).trim() : s; }
+function fmsBoard(t,d){ t=(""+t).toLowerCase(); d=(""+d).toLowerCase();
+  if(t==="customs") return "customs";
+  if(t==="sea") return d==="export"?"ocean_export":"ocean";
+  if(t==="air") return d==="export"?"air_export":"air_import";
+  return "road"; }
+function fmsMode(t){ t=(""+t).toLowerCase(); return {sea:"Ocean",air:"Air",road:"Road",customs:"Customs"}[t]||(t?t.charAt(0).toUpperCase()+t.slice(1):null); }
+function fmsDir(d){ d=(""+d).toLowerCase(); return {"import":"Import","export":"Export","domestic":"Domestic"}[d]||null; }
+function fmsOwner(s){ if(!s) return null; return (""+s).trim().split(/\s+/)[0]||null; }
+async function readFMS(){
+  var f=$("fms_file").files[0]; if(!f){ $("fms_preview").innerHTML='<span style="color:#b00020">Choose a file first.</span>'; return; }
+  $("fms_preview").textContent="Reading…";
+  try{
+    var buf=await f.arrayBuffer(); var wb=XLSX.read(buf,{type:"array"});
+    var ws=wb.Sheets[wb.SheetNames[0]];
+    var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:""});
+    if(rows.length<2){ $("fms_preview").textContent="No data rows."; return; }
+    var hdr=rows[0]; function ci(n){ return hdr.indexOf(n); }
+    var iDep=ci("Department"),iNum=ci("Number"),iDate=ci("Date"),iType=ci("Shipment type"),iDir=ci("Direction"),
+        iMawb=ci("Mawb|MB/L|Ref No."),iOrig=ci("Origin"),iDest=ci("Destination"),iShip=ci("Shipper"),iCons=ci("Consignee"),
+        iJob=ci("Job handled by"),iDel=ci("Delivery Date"),iEta=ci("ETA date"),iEtd=ci("ETD date"),iDep2=ci("Departure date");
+    if(iDep<0||iNum<0){ $("fms_preview").innerHTML='<span style="color:#b00020">This doesn\'t look like an FMS export (missing Department/Number columns).</span>'; return; }
+    var existing={}; allRows.forEach(function(r){ if(r.file_ref) existing[(""+r.file_ref).trim()]=r; });
+    var toAdd=[], toUpdate=[], skipped=0, seen={};
+    for(var n=1;n<rows.length;n++){
+      var r=rows[n]; if(!r||!r.length) continue;
+      var dep=(""+(r[iDep]||"")).trim().toUpperCase();
+      var num=(""+(r[iNum]||"")).trim();
+      var owner=fmsOwner(r[iJob]);
+      if(dep!=="SNN"&&dep!=="DUB"){ skipped++; continue; }
+      if(owner&&owner.toLowerCase()==="dusan"){ skipped++; continue; }
+      if(!num){ skipped++; continue; }
+      if(seen[num]) continue; seen[num]=1;
+      var type=r[iType], dir=r[iDir];
+      var delivered=!!(r[iDel]&&(""+r[iDel]).trim());
+      var target=fmsDate(r[iEta])||fmsDate(r[iEtd])||fmsDate(r[iDep2]);
+      var isExport=(""+dir).toLowerCase()==="export";
+      var rec={ file_ref:num, own_ref:(""+(r[iMawb]||"")).trim()||num, board:fmsBoard(type,dir),
+        mode:fmsMode(type), direction:fmsDir(dir),
+        customer:((""+(isExport?r[iShip]:r[iCons])).trim())||null,
+        origin:fmsLoc(r[iOrig]), destination:fmsLoc(r[iDest]),
+        date_received:fmsDate(r[iDate]), target_etd:target, ops_owner:owner };
+      var ex=existing[num];
+      if(ex){
+        var need=(delivered&&ex.status!=="Completed")||(target&&target!==(""+(ex.target_etd||"")).slice(0,10));
+        if(need){ var upd={target_etd:target,date_received:rec.date_received}; if(delivered) upd.status="Completed"; toUpdate.push({id:ex.id,upd:upd}); }
+      } else { rec.status=delivered?"Completed":"In Transit"; toAdd.push(rec); }
+    }
+    fmsParsed={toAdd:toAdd,toUpdate:toUpdate};
+    var msg='<b>'+toAdd.length+'</b> new to add · <b>'+toUpdate.length+'</b> to update · '+skipped+' skipped (not Shannon/Dublin, Dusan, or no IE no.).';
+    if(toAdd.length||toUpdate.length) msg+=' <button class="btn btn-green btn-sm" id="fms_apply" style="margin-left:8px">Apply</button>';
+    $("fms_preview").innerHTML=msg;
+    if($("fms_apply")) $("fms_apply").onclick=applyFMS;
+  }catch(e){ $("fms_preview").innerHTML='<span style="color:#b00020">Could not read file: '+esc(e.message||e)+'</span>'; }
+}
+async function applyFMS(){
+  if(!fmsParsed) return;
+  if($("fms_apply")) $("fms_apply").disabled=true;
+  $("fms_preview").insertAdjacentHTML("beforeend",'<div style="margin-top:6px;color:var(--muted)">Applying…</div>');
+  try{
+    var add=fmsParsed.toAdd,i;
+    for(i=0;i<add.length;i+=150){ var rr=await sb.from("handovers").insert(add.slice(i,i+150)); if(rr.error) throw rr.error; }
+    for(i=0;i<fmsParsed.toUpdate.length;i++){ var u=fmsParsed.toUpdate[i]; var ru=await sb.from("handovers").update(u.upd).eq("id",u.id); if(ru.error) throw ru.error; }
+    toast("FMS import: +"+add.length+" added, "+fmsParsed.toUpdate.length+" updated");
+    fmsParsed=null; $("fms_file").value=""; $("fms_preview").innerHTML="Done — refreshing…"; loadAll();
+  }catch(e){ $("fms_preview").innerHTML='<span style="color:#b00020">Error: '+esc(e.message||e)+'</span>'; }
+}
+
 /* ---------- create / update / delete ---------- */
 function wireUi(){
   $("addBtn").onclick=addHandover;
   $("clearForm").onclick=clearForm;
+  if($("fms_read")) $("fms_read").onclick=readFMS;
   ["search","fStatus","fOwner","fMode","fDir","fSales","fHideDone","fMine","meSelect"].forEach(function(id){ $(id).addEventListener("input",tableRows); $(id).addEventListener("change",tableRows); });
   $("fSales").innerHTML='<option value="">All sales</option>'+SALES.map(function(s){return '<option>'+esc(s)+'</option>';}).join("");
   $("meSelect").addEventListener("change",function(){ try{ localStorage.setItem("mw_me",this.value); }catch(e){} });
@@ -692,17 +802,18 @@ function wireUi(){
 }
 async function addHandover(){
   var oref=$("f_ownref").value.trim();
-  if(!oref){ $("formMsg").style.color="#b00020"; $("formMsg").textContent=(currentBoard==="ocean"?"The MBL number is required.":"The Sales QT number is required."); $("f_ownref").focus(); return; }
+  if(!oref){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="The "+((BOARD_CFG[currentBoard]||BOARD_CFG.handover).hdr)+" is required."; $("f_ownref").focus(); return; }
   var cust=$("f_customer").value.trim();
   if(!cust){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="Customer is required."; return; }
   var owner=$("f_owner").value.trim(), status=$("f_status").value;
   if(owner&&status==="New") status="Assigned";
-  var ocean=currentBoard==="ocean";
+  var cfg=BOARD_CFG[currentBoard]||BOARD_CFG.handover;
+  var isPort=(cfg.geo==="port-in"||cfg.geo==="port-out");
   var rec={ own_ref:oref, board:currentBoard, file_ref:$("f_fileref").value.trim()||null, date_received:$("f_date").value||null, sales_contact:$("f_sales").value.trim()||null,
-    customer:cust, mode:ocean?"Ocean":($("f_mode").value||null), direction:ocean?"Import":($("f_direction").value||null),
-    container_type:ocean?($("f_ctype").value||null):null, description:$("f_desc").value.trim()||null,
-    origin:ocean?($("f_origin").value||null):normCountry($("f_origin").value), destination:ocean?($("f_dest").value||null):normCountry($("f_dest").value),
-    ops_owner:owner||null, status:status,
+    customer:cust, mode:cfg.mode||($("f_mode").value||null), direction:cfg.dir||($("f_direction").value||null),
+    container_type:cfg.ctype?($("f_ctype").value||null):null, description:$("f_desc").value.trim()||null,
+    origin:isPort?($("f_origin").value||null):normCountry($("f_origin").value), destination:isPort?($("f_dest").value||null):normCountry($("f_dest").value),
+    ops_owner:owner||null, status:status, collection_haulier:$("f_colhaul").value.trim()||null, delivery_haulier:$("f_delhaul").value.trim()||null,
     target_etd:$("f_eta").value||null, notes:$("f_notes").value.trim()||null };
   var r=await sb.from("handovers").insert(rec).select().single();
   if(r.error){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="Error: "+r.error.message; return; }
@@ -710,7 +821,7 @@ async function addHandover(){
   toast("Handover added"+(r.data.own_ref?" — "+r.data.own_ref:"")); clearForm(); loadAll();
 }
 function clearForm(){
-  ["f_ownref","f_fileref","f_date","f_sales","f_customer","f_mode","f_direction","f_ctype","f_desc","f_origin","f_dest","f_owner","f_eta","f_notes"].forEach(function(id){var e=$(id); if(e) e.value="";});
+  ["f_ownref","f_fileref","f_date","f_sales","f_customer","f_mode","f_direction","f_ctype","f_desc","f_origin","f_dest","f_owner","f_eta","f_colhaul","f_delhaul","f_notes"].forEach(function(id){var e=$(id); if(e) e.value="";});
   $("f_date").value=new Date().toISOString().slice(0,10); $("f_status").value="New";
 }
 window.delItem=async function(id){
@@ -733,26 +844,34 @@ var EF=[["own_ref","QT no. (from Sales)","text",1],["file_ref","File ref (IE)","
   ["description","Shipment description","text",2],["origin","Origin (country)","country",1],["destination","Destination (country)","country",1],
   ["ops_owner","OPS owner","sel-owner",1],["target_etd","Target / ETD","date",1],["notes","Notes","text",2]];
 function fieldsFor(b){
-  if(b==="ocean") return [["own_ref","MBL Number","text",1],["file_ref","File ref (IE)","text",1],["date_received","Date received","date",1],["customer","Customer","cust",2],
-    ["sales_contact","Sales contact","sel-sales",1],["container_type","Shipment type","sel-ctype",1],["status","Status","sel-status",1],["board","List","sel-board",1],
-    ["description","Shipment description","text",2],["origin","Departure port","port-depart",1],["destination","Arrival port","port-arrive",1],
-    ["ops_owner","OPS owner","sel-owner",1],["target_etd","Target / ETD","date",1],["notes","Notes","text",2]];
-  return EF;
+  var cfg=BOARD_CFG[b]||BOARD_CFG.handover;
+  var f=[["own_ref",cfg.ref.replace(" — from Sales",""),"text",1],["file_ref","File ref (IE)","text",1],["date_received","Date received","date",1],["customer","Customer","cust",2],
+    ["sales_contact","Sales contact","sel-sales",1]];
+  if(cfg.ctype) f.push(["container_type","Shipment type","sel-ctype",1]);
+  if(!cfg.mode) f.push(["mode","Mode","sel-mode",1]);
+  if(!cfg.dir) f.push(["direction","Direction","sel-dir",1]);
+  f.push(["status","Status","sel-status",1],["board","List","sel-board",1],["description","Shipment description","text",2]);
+  if(cfg.geo==="port-in"){ f.push(["origin","Departure port","port-world",1],["destination","Arrival port (Ireland)","port-ie",1]); }
+  else if(cfg.geo==="port-out"){ f.push(["origin","Departure port (Ireland)","port-ie",1],["destination","Arrival port","port-world",1]); }
+  else { f.push(["origin","Origin (country)","country",1],["destination","Destination (country)","country",1]); }
+  f.push(["ops_owner","OPS owner","sel-owner",1],["target_etd","Target / ETD","date",1],["collection_haulier","Collection haulier","haulier",1],["delivery_haulier","Delivery haulier","haulier",1],["notes","Notes","text",2]);
+  return f;
 }
 window.openEdit=function(id){
   var it=allRows.find(function(x){return x.id===id;}); if(!it) return; editId=id;
   $("editGrid").innerHTML=fieldsFor(it.board||"handover").map(function(f){
     var k=f[0],lab=f[1],ty=f[2],sp=f[3],v=it[k]||"",ctrl;
     if(ty==="sel-mode") ctrl=selHtml("e_"+k,["","Air","Ocean","Road","Customs","Multi-modal"],v);
-    else if(ty==="sel-board"){ var bv=it.board||"handover"; ctrl='<select id="e_board"><option value="handover"'+(bv==="handover"?" selected":"")+'>BD Handovers</option><option value="keyacct"'+(bv==="keyacct"?" selected":"")+'>In-house Accounts</option><option value="ocean"'+(bv==="ocean"?" selected":"")+'>Ocean Imports</option></select>'; }
+    else if(ty==="sel-board"){ var bv=it.board||"handover"; ctrl='<select id="e_board">'+Object.keys(BOARD_NAMES).map(function(kk){return '<option value="'+kk+'"'+(bv===kk?" selected":"")+'>'+esc(BOARD_NAMES[kk])+'</option>';}).join("")+'</select>'; }
     else if(ty==="sel-dir") ctrl=selHtml("e_"+k,["","Import","Export","Cross-trade","Domestic"],v);
     else if(ty==="sel-ctype") ctrl=selHtml("e_"+k,[""].concat(CTYPES),v);
-    else if(ty==="port-depart") ctrl=selHtml("e_"+k,[""].concat(PORTS_DEPART),v);
-    else if(ty==="port-arrive") ctrl=selHtml("e_"+k,[""].concat(PORTS_ARRIVE),v);
+    else if(ty==="port-world") ctrl=selHtml("e_"+k,[""].concat(PORTS_DEPART),v);
+    else if(ty==="port-ie") ctrl=selHtml("e_"+k,[""].concat(PORTS_ARRIVE),v);
     else if(ty==="sel-status") ctrl=selHtml("e_"+k,STATUSES,v);
     else if(ty==="sel-sales") ctrl=selHtml("e_"+k,[""].concat(SALES),v);
     else if(ty==="sel-owner") ctrl=selHtml("e_"+k,[""].concat(OPERATORS),v);
     else if(ty==="cust") ctrl='<input id="e_'+k+'" list="customerList" value="'+esc(v)+'">';
+    else if(ty==="haulier") ctrl='<input id="e_'+k+'" list="haulierList" value="'+esc(v)+'">';
     else if(ty==="country") ctrl='<input id="e_'+k+'" class="country-ac" autocomplete="off" value="'+esc(v)+'" placeholder="Type code or country">';
     else { var vv=(ty==="date")?(""+v).slice(0,10):v; ctrl='<input id="e_'+k+'" type="'+(ty==="date"?"date":"text")+'" value="'+esc(vv)+'">'; }
     return '<div class="field'+(sp===2?' col2':'')+'"><label>'+lab+'</label>'+ctrl+'</div>';
@@ -762,8 +881,9 @@ function selHtml(id,opts,v){ var list=opts.slice(); if(v&&list.indexOf(v)<0) lis
 async function saveEdit(){
   var it=allRows.find(function(x){return x.id===editId;}); if(!it) return; var upd={};
   fieldsFor(it.board||"handover").forEach(function(f){ var el=$("e_"+f[0]); if(el){ var val=el.value; if(val==="—") val=""; upd[f[0]]=val||null; } });
-  if(!upd.own_ref){ toast((it.board==="ocean"?"The MBL number":"The Sales QT number")+" is required."); var er=$("e_own_ref"); if(er) er.focus(); return; }
-  if(it.board!=="ocean"){ if(upd.origin) upd.origin=normCountry(upd.origin); if(upd.destination) upd.destination=normCountry(upd.destination); }
+  var ecfg=BOARD_CFG[it.board]||BOARD_CFG.handover;
+  if(!upd.own_ref){ toast("The "+ecfg.hdr+" is required."); var er=$("e_own_ref"); if(er) er.focus(); return; }
+  if(ecfg.geo==="country"){ if(upd.origin) upd.origin=normCountry(upd.origin); if(upd.destination) upd.destination=normCountry(upd.destination); }
   if(upd.ops_owner&&upd.status==="New") upd.status="Assigned";
   var r=await sb.from("handovers").update(upd).eq("id",editId);
   if(r.error){ toast("Error: "+r.error.message); return; }
@@ -827,11 +947,12 @@ function renderDetail(){
   var bd=i.board||"handover";
   var route=(countryName(i.origin)||i.origin||"")+(i.origin&&i.destination?" → ":"")+(countryName(i.destination)||i.destination||"");
   function fld(l,v){ return '<div><div class="dl">'+l+'</div><div class="dv">'+(v?esc(v):"—")+'</div></div>'; }
-  var midCells = bd==="ocean"
+  var dcfg=BOARD_CFG[bd]||BOARD_CFG.handover;
+  var midCells = dcfg.ctype
     ? fld("Shipment type",i.container_type)+fld("Route",route)
     : fld("Mode",i.mode)+fld("Direction",i.direction);
-  var extraRoute = bd==="ocean" ? "" : fld("OPS owner",i.ops_owner)+fld("Route",route);
-  var ownerCell = bd==="ocean" ? fld("OPS owner",i.ops_owner) : "";
+  var extraRoute = dcfg.ctype ? "" : fld("OPS owner",i.ops_owner)+fld("Route",route);
+  var ownerCell = dcfg.ctype ? fld("OPS owner",i.ops_owner) : "";
   var moveBtns=Object.keys(BOARD_NAMES).filter(function(b){return b!==bd;}).map(function(b){
     return '<button class="btn btn-light btn-sm" style="border:1px solid var(--line)" onclick="moveBoard(\''+i.id+'\',\''+b+'\')">Move to '+BOARD_NAMES[b]+'</button>';
   }).join("");
@@ -841,6 +962,7 @@ function renderDetail(){
     midCells+ownerCell+extraRoute+'</div>'+
     '<div class="dl" style="margin-top:6px">Description</div><div class="dv">'+(i.description?esc(i.description):"—")+'</div>'+
     '<div class="dl" style="margin-top:6px">Notes</div><div class="dv">'+(i.notes?esc(i.notes):"—")+'</div>'+
+    '<div class="dl" style="margin-top:6px">Haulier — collection / delivery</div><div class="dv">'+(i.collection_haulier?esc(i.collection_haulier):"—")+' &nbsp;/&nbsp; '+(i.delivery_haulier?esc(i.delivery_haulier):"—")+'</div>'+
     '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-light btn-sm" style="border:1px solid var(--line)" onclick="openEdit(\''+i.id+'\')">Edit all fields</button>'+
     moveBtns+'</div>';
   var lines=(i.comments||"").split("\n").filter(function(l){return l.trim();});
