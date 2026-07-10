@@ -44,7 +44,7 @@
   .tile .lbl{font-size:12px;margin-top:6px;font-weight:bold;letter-spacing:.4px;opacity:.95}
   .t-total{background:var(--navy)} .t-unassigned{background:#c00000} .t-open{background:var(--green-acc)} .t-done{background:#808a96}
 
-  .panels{display:grid;grid-template-columns:1.15fr 1fr;gap:14px;margin-bottom:18px}
+  .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:18px}
   .board-tabs{display:flex;gap:4px;margin:0 0 16px;border-bottom:2px solid var(--line)}
   .board-tab{background:none;border:none;padding:11px 20px;font:inherit;font-size:14px;font-weight:bold;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;border-radius:6px 6px 0 0}
   .board-tab:hover{background:#f4f6f9}
@@ -78,8 +78,17 @@
   .toolbar .search{flex:1;min-width:180px}
   .count-note{font-size:12px;color:var(--muted)}
 
-  .tablecard{background:#fff;border:1px solid var(--line);border-radius:6px;overflow:auto}
+  .tablecard{background:#fff;border:1px solid var(--line);border-radius:6px;overflow-x:hidden}
   table{border-collapse:collapse;width:100%}
+  #mainTable{table-layout:fixed}
+  #mainTable th, #mainTable td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #mainTable thead th{padding:8px 7px;font-size:11px}
+  #mainTable tbody td{padding:7px 7px;font-size:11.5px;vertical-align:middle}
+  #mainTable .status-select{font-size:11px;padding:3px 4px;max-width:100%}
+  #mainTable .btn-sm{padding:3px 7px;font-size:11px}
+  #mainTable td .mode-tag{font-size:10px;padding:1px 5px}
+  #mainTable td.row-actions{white-space:normal}
+  #mainTable td.row-actions .btn{margin:1px 2px 1px 0}
   thead th{background:var(--green);color:#fff;font-size:11.5px;text-align:left;padding:9px 10px;letter-spacing:.3px;white-space:nowrap}
   tbody td{padding:8px 10px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:top}
   tbody tr:nth-child(even){background:var(--zebra)}
@@ -247,6 +256,7 @@
   <div class="panels">
     <div class="card"><h2>HANDOVERS BY STATUS</h2><div class="body" id="chartStatus"></div></div>
     <div class="card"><h2>OPEN SHIPMENTS BY OWNER</h2><div class="body" id="chartOwner"></div></div>
+    <div class="card"><h2>THIS MONTH BY OWNER</h2><div class="body" id="chartMonthly"></div></div>
   </div>
 
   <div class="toolbar">
@@ -259,12 +269,17 @@
     <select id="meSelect" title="Who you are (for ‘Mine only’)"><option value="">You…</option></select>
     <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="fMine">Mine only</label>
     <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="fHideDone">Hide completed</label>
+    <button class="btn btn-green btn-sm" id="bulkDone" onclick="bulkComplete()" disabled>✓ Complete selected (0)</button>
     <span class="count-note" id="countNote"></span>
   </div>
 
   <div class="tablecard">
-    <table>
+    <table id="mainTable">
+      <colgroup>
+        <col style="width:3.5%"><col style="width:8%"><col style="width:7%"><col style="width:6%"><col style="width:11%"><col style="width:5%"><col style="width:6%"><col style="width:13%"><col style="width:9%"><col style="width:8%"><col style="width:9%"><col style="width:6%"><col style="width:6%"><col style="width:8%">
+      </colgroup>
       <thead><tr>
+        <th style="text-align:center"><input type="checkbox" id="selAll" onclick="toggleSelAll(this)" title="Select all shown"></th>
         <th class="sortable" onclick="sortBy('own_ref')"><span id="hdr_ownref">QT no.</span><span class="srt" data-k="own_ref"></span></th>
         <th class="sortable" onclick="sortBy('file_ref')">File ref<span class="srt" data-k="file_ref"></span></th>
         <th class="sortable" onclick="sortBy('date_received')">Received<span class="srt" data-k="date_received"></span></th>
@@ -521,6 +536,11 @@ function charts(){
   var byOwner=Object.keys(owners).map(function(k){return {cat:k,val:owners[k]};}).sort(function(a,b){return b.val-a.val;});
   if(!byOwner.length) byOwner=[{cat:"—",val:0}];
   barChart($("chartOwner"),byOwner,function(d){return d.cat==="(unassigned)"?"#c00000":"var(--green-acc)";});
+  var ym=new Date().toISOString().slice(0,7), mo={};
+  handovers.forEach(function(i){ var d=(""+(i.date_received||i.created_at||"")).slice(0,7); if(d===ym){ var k=i.ops_owner||"(unassigned)"; mo[k]=(mo[k]||0)+1; } });
+  var byMonth=Object.keys(mo).map(function(k){return {cat:k,val:mo[k]};}).sort(function(a,b){return b.val-a.val;});
+  if(!byMonth.length) byMonth=[{cat:"—",val:0}];
+  barChart($("chartMonthly"),byMonth,function(d){return d.cat==="(unassigned)"?"#c00000":"var(--navy)";});
 }
 function refreshOwnerFilter(){
   var owners={}; handovers.forEach(function(i){ if(i.ops_owner) owners[i.ops_owner]=1; });
@@ -546,6 +566,24 @@ function updateSortIndicators(){
   var spans=document.querySelectorAll(".srt");
   for(var i=0;i<spans.length;i++){ var k=spans[i].getAttribute("data-k"); spans[i].textContent=(sortKey===k)?(sortDir>0?"▲":"▼"):""; }
 }
+var selectedIds={};
+window.toggleSel=function(el,id){ if(el.checked) selectedIds[id]=1; else delete selectedIds[id]; updateBulkBar(); };
+window.toggleSelAll=function(cb){
+  var boxes=document.querySelectorAll("#rows .rowsel");
+  for(var i=0;i<boxes.length;i++){ boxes[i].checked=cb.checked; var id=boxes[i].getAttribute("data-id"); if(cb.checked) selectedIds[id]=1; else delete selectedIds[id]; }
+  updateBulkBar();
+};
+function updateBulkBar(){
+  var n=Object.keys(selectedIds).length, b=$("bulkDone");
+  if(b){ b.textContent="✓ Complete selected ("+n+")"; b.disabled=n===0; }
+}
+window.bulkComplete=async function(){
+  var ids=Object.keys(selectedIds); if(!ids.length) return;
+  if(!confirm("Mark "+ids.length+" shipment"+(ids.length>1?"s":"")+" as Completed?")) return;
+  var r=await sb.from("handovers").update({status:"Completed"}).in("id",ids);
+  if(r.error){ toast("Error: "+r.error.message); return; }
+  selectedIds={}; toast(ids.length+" marked Completed"); loadAll();
+};
 function tableRows(){
   var q=$("search").value.toLowerCase().trim(),fs=$("fStatus").value,fo=$("fOwner").value,fm=$("fMode").value,fd=$("fDir").value,fsl=$("fSales").value;
   var hideDone=$("fHideDone").checked, mine=$("fMine").checked, me=$("meSelect").value;
@@ -574,21 +612,23 @@ function tableRows(){
     var todayS=new Date().toISOString().slice(0,10);
     var plus1=new Date(Date.now()+864e5).toISOString().slice(0,10);
     var tgt=i.target_etd?(""+i.target_etd).slice(0,10):"";
-    var overdue=tgt && tgt<todayS && i.status!=="Completed";
-    var dueSoon=!overdue && tgt && tgt>=todayS && tgt<=plus1 && i.status!=="Completed";
+    var isDone=(""+(i.status||"")).trim().toLowerCase()==="completed";
+    var overdue=tgt && tgt<todayS && !isDone;
+    var dueSoon=!overdue && tgt && tgt>=todayS && tgt<=plus1 && !isDone;
     var cls=(!i.ops_owner?"unassigned":"")+(i.status==="Completed"?" completed":"")+(overdue?" overdue":"")+(dueSoon?" duesoon":"");
     var route=(i.origin||"")+(i.origin&&i.destination?" → ":"")+(i.destination||"");
     var cn=commentCount(i.comments); var cmtTxt=cn?(cn+(cn===1?" note":" notes")):"+ add";
     return '<tr class="'+cls+'">'+
+      '<td style="text-align:center"><input type="checkbox" class="rowsel" data-id="'+i.id+'" onclick="toggleSel(this,\''+i.id+'\')"'+(selectedIds[i.id]?' checked':'')+'></td>'+
       '<td class="ref" style="cursor:pointer;text-decoration:underline" onclick="openDetail(\''+i.id+'\')" title="Open details">'+esc(i.own_ref||"")+'</td>'+
       '<td style="cursor:pointer" onclick="openDetail(\''+i.id+'\')">'+esc(i.file_ref||"")+'</td>'+
       '<td>'+fmtDate(i.date_received)+'</td>'+
-      '<td>'+esc(i.customer)+'</td>'+
+      '<td title="'+esc(i.customer||"")+'">'+esc(i.customer)+'</td>'+
       '<td>'+esc(i.sales_contact||"")+'</td>'+
       '<td>'+(i.mode?'<span class="mode-tag">'+esc(i.mode)+'</span>':'')+(i.container_type?' <span class="mode-tag" style="background:#e7eef7;color:#1F3864">'+esc(i.container_type)+'</span>':'')+'</td>'+
-      '<td>'+esc(i.description||"")+'</td>'+
-      '<td title="'+esc((countryName(i.origin)||"")+(i.origin&&i.destination?" → ":"")+(countryName(i.destination)||""))+'">'+esc(route)+'</td>'+
-      '<td>'+(i.ops_owner?esc(i.ops_owner):'<span style="color:#c00000;font-weight:bold">— none —</span>')+'</td>'+
+      '<td title="'+esc(i.description||"")+'">'+esc(i.description||"")+'</td>'+
+      '<td title="'+esc((countryName(i.origin)||i.origin||"")+(i.origin&&i.destination?" → ":"")+(countryName(i.destination)||i.destination||""))+'">'+esc(route)+'</td>'+
+      '<td title="'+esc(i.ops_owner||"")+'">'+(i.ops_owner?esc(i.ops_owner):'<span style="color:#c00000;font-weight:bold">— none —</span>')+'</td>'+
       '<td>'+statusSelect(i)+'</td>'+
       '<td><span class="task-chip" onclick="openComments(\''+i.id+'\')">'+cmtTxt+'</span></td>'+
       '<td'+(overdue?' style="color:#b00020;font-weight:bold"':(dueSoon?' style="color:#8a5a00;font-weight:bold"':''))+'>'+fmtDate(i.target_etd)+(overdue?' · overdue':(dueSoon?' · due soon':''))+'</td>'+
@@ -598,6 +638,8 @@ function tableRows(){
   }).join("");
   $("countNote").textContent=list.length+" of "+handovers.length+" shown";
   updateSortIndicators();
+  updateBulkBar();
+  var sa=$("selAll"); if(sa){ var boxes=document.querySelectorAll("#rows .rowsel"); sa.checked=boxes.length>0 && Object.keys(selectedIds).length>=boxes.length; }
 }
 function renderAll(){ kpis(); charts(); refreshOwnerFilter(); refreshCustomerList(); tableRows(); if(currentView==="overview") renderOverview(); }
 var currentView="overview";
@@ -616,13 +658,14 @@ function renderOverview(){
   var today=new Date().toISOString().slice(0,10);
   var plus3=new Date(Date.now()+3*864e5).toISOString().slice(0,10);
   var dt=function(x){return x.target_etd?(""+x.target_etd).slice(0,10):"";};
-  var active=allRows.filter(function(x){return x.status!=="Completed";});
+  var isDone=function(x){ return (""+(x.status||"")).trim().toLowerCase()==="completed"; };
+  var active=allRows.filter(function(x){return !isDone(x);});
   var dueSoon=active.filter(function(x){var t=dt(x);return t&&t>=today&&t<=plus3;}).sort(function(a,b){return dt(a)<dt(b)?-1:1;});
   var overdue=active.filter(function(x){var t=dt(x);return t&&t<today;}).sort(function(a,b){return dt(a)<dt(b)?-1:1;});
   var unassigned=active.filter(function(x){return !x.ops_owner;}).sort(function(a,b){return dt(a)<dt(b)?-1:1;});
 
   function calc(rows){
-    var open=rows.filter(function(x){return x.status!=="Completed";});
+    var open=rows.filter(function(x){return !isDone(x);});
     return { open:open.length,
       overdue:open.filter(function(x){var t=dt(x);return t&&t<today;}).length,
       due:open.filter(function(x){var t=dt(x);return t&&t>=today&&t<=plus3;}).length,
@@ -671,10 +714,24 @@ function renderOverview(){
       '<div style="width:26px;text-align:right;font-weight:bold;font-size:12.5px">'+byOwner[o]+'</div></div>';
   }).join("") : '<div style="color:var(--muted);font-size:13px">No open shipments assigned.</div>';
 
+  var ym=new Date().toISOString().slice(0,7), mByO={};
+  allRows.forEach(function(x){ var d=(""+(x.date_received||x.created_at||"")).slice(0,7); if(d===ym){ var k=x.ops_owner||"(unassigned)"; mByO[k]=(mByO[k]||0)+1; } });
+  var mOwners=Object.keys(mByO).sort(function(a,b){return mByO[b]-mByO[a];});
+  var maxM=mOwners.length?mByO[mOwners[0]]:1;
+  var monthName=new Date().toLocaleDateString("en-IE",{month:"long",year:"numeric"});
+  var monthly=mOwners.length? mOwners.map(function(o){
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:130px;font-size:12.5px">'+esc(o)+'</div>'+
+      '<div style="flex:1;background:#eef1f5;border-radius:5px;height:18px;overflow:hidden"><div style="width:'+Math.round(mByO[o]/maxM*100)+'%;height:100%;background:var(--navy)"></div></div>'+
+      '<div style="width:26px;text-align:right;font-weight:bold;font-size:12.5px">'+mByO[o]+'</div></div>';
+  }).join("") : '<div style="color:var(--muted);font-size:13px">No shipments logged this month.</div>';
+
   $("viewOverview").innerHTML=
     strip+brk+
     listCard("Overdue",overdue,"#b00020","Nothing overdue — all on track.")+
-    '<div class="card"><h2>Open shipments by owner</h2><div class="body">'+workload+'</div></div>';
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">'+
+      '<div class="card"><h2>Open shipments by owner</h2><div class="body">'+workload+'</div></div>'+
+      '<div class="card"><h2>'+esc(monthName)+' — total by owner (all modes)</h2><div class="body">'+monthly+'</div></div>'+
+    '</div>';
 }
 window.switchBoard=function(b){
   if(!BOARDS[b]) return;
@@ -689,6 +746,7 @@ window.switchBoard=function(b){
   if($("emptyTitle")) $("emptyTitle").textContent=cfg.emptyTitle;
   if($("emptyMsg")) $("emptyMsg").textContent=cfg.empty;
   window.closeDetail&&window.closeDetail();
+  selectedIds={};
   handovers=allRows.filter(function(x){return (x.board||"handover")===currentBoard;});
   renderAll();
 };
@@ -724,23 +782,37 @@ function fmsBoard(t,d){ t=(""+t).toLowerCase(); d=(""+d).toLowerCase();
   return "road"; }
 function fmsMode(t){ t=(""+t).toLowerCase(); return {sea:"Ocean",air:"Air",road:"Road",customs:"Customs"}[t]||(t?t.charAt(0).toUpperCase()+t.slice(1):null); }
 function fmsDir(d){ d=(""+d).toLowerCase(); return {"import":"Import","export":"Export","domestic":"Domestic"}[d]||null; }
-function fmsOwner(s){ if(!s) return null; return (""+s).trim().split(/\s+/)[0]||null; }
+var FMS_OWNER_ALIAS={ "roisinhogan":"Roisin", "roisin":"Roisin" };
+function fmsOwner(s){ if(!s) return null; var first=(""+s).trim().split(/\s+/)[0]; if(!first) return null; return FMS_OWNER_ALIAS[first.toLowerCase()]||first; }
 async function readFMS(){
   var f=$("fms_file").files[0]; if(!f){ $("fms_preview").innerHTML='<span style="color:#b00020">Choose a file first.</span>'; return; }
+  if(typeof XLSX==="undefined"){ $("fms_preview").innerHTML='<span style="color:#b00020">The spreadsheet reader didn\'t load (check your connection / ad-blocker) — reload the page and try again.</span>'; return; }
   $("fms_preview").textContent="Reading…";
   try{
     var buf=await f.arrayBuffer(); var wb=XLSX.read(buf,{type:"array"});
     var ws=wb.Sheets[wb.SheetNames[0]];
     var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:""});
-    if(rows.length<2){ $("fms_preview").textContent="No data rows."; return; }
-    var hdr=rows[0]; function ci(n){ return hdr.indexOf(n); }
+    if(rows.length<2){ $("fms_preview").textContent="No data rows found in the file."; return; }
+    // find the header row (some exports have a title line above it)
+    var norm=function(v){ return (""+v).replace(/\s+/g," ").trim().toLowerCase(); };
+    var hdrRow=-1;
+    for(var hr=0; hr<Math.min(rows.length,8); hr++){
+      var line=rows[hr].map(norm);
+      if(line.indexOf("department")>=0 && line.indexOf("number")>=0){ hdrRow=hr; break; }
+    }
+    if(hdrRow<0){ $("fms_preview").innerHTML='<span style="color:#b00020">Couldn\'t find the FMS header row (looking for “Department” and “Number”). Is this the right export?</span>'; return; }
+    var hdr=rows[hdrRow].map(norm);
+    function ci(n){ return hdr.indexOf(norm(n)); }
+    var dataStart=hdrRow+1;
     var iDep=ci("Department"),iNum=ci("Number"),iDate=ci("Date"),iType=ci("Shipment type"),iDir=ci("Direction"),
         iMawb=ci("Mawb|MB/L|Ref No."),iOrig=ci("Origin"),iDest=ci("Destination"),iShip=ci("Shipper"),iCons=ci("Consignee"),
         iJob=ci("Job handled by"),iDel=ci("Delivery Date"),iEta=ci("ETA date"),iEtd=ci("ETD date"),iDep2=ci("Departure date");
-    if(iDep<0||iNum<0){ $("fms_preview").innerHTML='<span style="color:#b00020">This doesn\'t look like an FMS export (missing Department/Number columns).</span>'; return; }
-    var existing={}; allRows.forEach(function(r){ if(r.file_ref) existing[(""+r.file_ref).trim()]=r; });
+    var existing={};
+    allRows.forEach(function(r){ if(r.file_ref) existing[(""+r.file_ref).trim()]=r; });
+    // also match the IE against the QT/ref field on ANY board so a job that's already open is never re-added
+    allRows.forEach(function(r){ if(r.own_ref){ var k=(""+r.own_ref).trim(); if(k&&!existing[k]) existing[k]=r; } });
     var toAdd=[], toUpdate=[], skipped=0, seen={};
-    for(var n=1;n<rows.length;n++){
+    for(var n=dataStart;n<rows.length;n++){
       var r=rows[n]; if(!r||!r.length) continue;
       var dep=(""+(r[iDep]||"")).trim().toUpperCase();
       var num=(""+(r[iNum]||"")).trim();
@@ -755,11 +827,12 @@ async function readFMS(){
       var isExport=(""+dir).toLowerCase()==="export";
       var rec={ file_ref:num, own_ref:(""+(r[iMawb]||"")).trim()||num, board:fmsBoard(type,dir),
         mode:fmsMode(type), direction:fmsDir(dir),
-        customer:((""+(isExport?r[iShip]:r[iCons])).trim())||null,
+        customer:((""+(isExport?r[iShip]:r[iCons])).trim())||"(no customer)",
         origin:fmsLoc(r[iOrig]), destination:fmsLoc(r[iDest]),
         date_received:fmsDate(r[iDate]), target_etd:target, ops_owner:owner };
       var ex=existing[num];
       if(ex){
+        if(ex.status==="Completed"){ continue; } // already done — leave it, never reopen or duplicate
         var need=(delivered&&ex.status!=="Completed")||(target&&target!==(""+(ex.target_etd||"")).slice(0,10));
         if(need){ var upd={target_etd:target,date_received:rec.date_received}; if(delivered) upd.status="Completed"; toUpdate.push({id:ex.id,upd:upd}); }
       } else { rec.status=delivered?"Completed":"In Transit"; toAdd.push(rec); }
@@ -780,7 +853,9 @@ async function applyFMS(){
     for(i=0;i<add.length;i+=150){ var rr=await sb.from("handovers").insert(add.slice(i,i+150)); if(rr.error) throw rr.error; }
     for(i=0;i<fmsParsed.toUpdate.length;i++){ var u=fmsParsed.toUpdate[i]; var ru=await sb.from("handovers").update(u.upd).eq("id",u.id); if(ru.error) throw ru.error; }
     toast("FMS import: +"+add.length+" added, "+fmsParsed.toUpdate.length+" updated");
-    fmsParsed=null; $("fms_file").value=""; $("fms_preview").innerHTML="Done — refreshing…"; loadAll();
+    fmsParsed=null; $("fms_file").value=""; $("fms_preview").innerHTML="Done — refreshing…";
+    if($("fHideDone")) $("fHideDone").checked=true;
+    loadAll();
   }catch(e){ $("fms_preview").innerHTML='<span style="color:#b00020">Error: '+esc(e.message||e)+'</span>'; }
 }
 
