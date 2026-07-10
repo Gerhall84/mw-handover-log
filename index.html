@@ -200,6 +200,7 @@
     <button class="board-tab active" id="tabOverview" onclick="showTab('overview')">Manager Overview</button>
     <button class="board-tab" id="tabHandover" onclick="showTab('handover')">BD Handovers</button>
     <button class="board-tab" id="tabKeyacct" onclick="showTab('keyacct')">In-house Accounts</button>
+    <button class="board-tab" id="tabRyanair" onclick="showTab('ryanair')">Ryanair</button>
     <button class="board-tab" id="tabOcean" onclick="showTab('ocean')">Ocean Imports</button>
     <button class="board-tab" id="tabOcean_export" onclick="showTab('ocean_export')">Ocean Exports</button>
     <button class="board-tab" id="tabAir_import" onclick="showTab('air_import')">Air Imports</button>
@@ -365,6 +366,7 @@ var sb=null, handovers=[], allRows=[], currentBoard="handover";
 var BOARDS={
   handover:{ title:"BD Handovers", strip:"Log every shipment handed over by the BD team. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No BD handovers logged yet", empty:"Use Add above to log the first shipment." },
   keyacct:{ title:"In-house Accounts", strip:"Track shipments for in-house accounts. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No in-house shipments logged yet", empty:"Use Add above to log the first one." },
+  ryanair:{ title:"Ryanair", strip:"Ryanair MRO network shipments (Ryanair, Prestwick, PAM, MRO Teknik, Joramco, Jordan, Aeroplex). Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No Ryanair shipments logged yet", empty:"Use Add above to log the first one." },
   ocean:{ title:"Ocean Imports", strip:"Track ocean import shipments by MBL. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No ocean imports logged yet", empty:"Use Add above to log the first one." },
   ocean_export:{ title:"Ocean Exports", strip:"Track ocean export shipments by MBL. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No ocean exports logged yet", empty:"Use Add above to log the first one." },
   air_import:{ title:"Air Imports", strip:"Track air import shipments. Rows with no OPS owner show in red until someone takes them.", add:"+ Add", emptyTitle:"No air imports logged yet", empty:"Use Add above to log the first one." },
@@ -375,6 +377,7 @@ var BOARDS={
 var BOARD_CFG={
   handover:{ref:"QT no. — from Sales",refPh:"Sales quotation (QT) number",hdr:"QT no.",geo:"country",mode:null,dir:null,ctype:false},
   keyacct:{ref:"QT no. — from Sales",refPh:"Sales quotation (QT) number",hdr:"QT no.",geo:"country",mode:null,dir:null,ctype:false},
+  ryanair:{ref:"Reference",refPh:"Job / ref (MBL, AWB, etc.)",hdr:"Ref",geo:"country",mode:null,dir:null,ctype:false},
   ocean:{ref:"MBL Number",refPh:"Master B/L number",hdr:"MBL Number",geo:"port-in",mode:"Ocean",dir:"Import",ctype:true},
   ocean_export:{ref:"MBL Number",refPh:"Master B/L number",hdr:"MBL Number",geo:"port-out",mode:"Ocean",dir:"Export",ctype:true},
   air_import:{ref:"AWB Number",refPh:"Air waybill number",hdr:"AWB Number",geo:"country",mode:"Air",dir:"Import",ctype:false},
@@ -389,7 +392,9 @@ var OPERATORS=["Ger","Ashley","Dominic","Roisin","Lee","Allanah","Tea","Lisa","D
 var PORTS_DEPART=["Rotterdam","Antwerp","Zeebrugge","Hamburg","Bremerhaven","Felixstowe","Southampton","London Gateway","Liverpool","Le Havre","Dunkirk","Algeciras","Valencia","Barcelona","Genoa","Piraeus","Shanghai","Ningbo","Shenzhen","Qingdao","Singapore","Port Klang","Busan","New York/NJ","Savannah","Norfolk","Montreal"];
 var PORTS_ARRIVE=["Dublin","Cork","Belfast"];
 var CTYPES=["FCL","LCL"];
-var BOARD_NAMES={handover:"BD Handovers",keyacct:"In-house Accounts",ocean:"Ocean Imports",ocean_export:"Ocean Exports",air_import:"Air Imports",air_export:"Air Exports",road:"Road",customs:"Customs"};
+var BOARD_NAMES={handover:"BD Handovers",keyacct:"In-house Accounts",ryanair:"Ryanair",ocean:"Ocean Imports",ocean_export:"Ocean Exports",air_import:"Air Imports",air_export:"Air Exports",road:"Road",customs:"Customs"};
+var RYA_RE=/\b(ryanair|prestwick|pam|mro teknik|joramco|jordan|aeroplex)\b/i;
+function isRyanair(name){ return !!name && RYA_RE.test(""+name); }
 var STATUS_CLR={
   "New":["var(--new)","var(--new-t)"],"Assigned":["var(--asgn)","var(--asgn-t)"],
   "Booked":["var(--book)","var(--book-t)"],"In Transit":["var(--prog)","var(--prog-t)"],
@@ -666,7 +671,7 @@ window.showTab=function(t){
   if(isOv){ Object.keys(BOARD_NAMES).forEach(function(k){ var el=$("tab"+k.charAt(0).toUpperCase()+k.slice(1)); if(el) el.classList.remove("active"); }); $("boardTitle").textContent="Manager Overview"; $("stripText").textContent="Live view across all boards."; renderOverview(); }
   else { switchBoard(t); }
 };
-function ovBoardLabel(b){ return {handover:"BD",keyacct:"In-house",ocean:"Ocean Imp",ocean_export:"Ocean Exp",air_import:"Air Imp",air_export:"Air Exp",road:"Road",customs:"Customs"}[b]||"BD"; }
+function ovBoardLabel(b){ return {handover:"BD",keyacct:"In-house",ryanair:"Ryanair",ocean:"Ocean Imp",ocean_export:"Ocean Exp",air_import:"Air Imp",air_export:"Air Exp",road:"Road",customs:"Customs"}[b]||"BD"; }
 function renderOverview(){
   var today=new Date().toISOString().slice(0,10);
   var plus3=new Date(Date.now()+3*864e5).toISOString().slice(0,10);
@@ -827,16 +832,23 @@ async function readFMS(){
       if(!num){ skipped++; continue; }
       if(seen[num]) continue; seen[num]=1;
       var type=r[iType], dir=r[iDir];
+      var party=((""+(r[iShip]||""))+" "+(""+(r[iCons]||""))).toLowerCase();
+      var isRya=RYA_RE.test(party);
+      var board=isRya?"ryanair":fmsBoard(type,dir);
       var delivered=!!(r[iDel]&&(""+r[iDel]).trim());
       var target=fmsDate(r[iEta])||fmsDate(r[iEtd])||fmsDate(r[iDep2]);
       var isExport=(""+dir).toLowerCase()==="export";
-      var rec={ file_ref:num, own_ref:(""+(r[iMawb]||"")).trim()||num, board:fmsBoard(type,dir),
+      var rec={ file_ref:num, own_ref:(""+(r[iMawb]||"")).trim()||num, board:board,
         mode:fmsMode(type), direction:fmsDir(dir),
         customer:((""+(isExport?r[iShip]:r[iCons])).trim())||"(no customer)",
         origin:fmsLoc(r[iOrig]), destination:fmsLoc(r[iDest]),
         date_received:fmsDate(r[iDate]), target_etd:target, ops_owner:owner };
       var ex=existing[num];
       if(ex){
+        if(isRya && (ex.board||"handover")!=="ryanair"){ // Ryanair precedence — always move onto the Ryanair board
+          var mv={board:"ryanair"}; if(delivered && ex.status!=="Completed") mv.status="Completed";
+          toUpdate.push({id:ex.id,upd:mv}); continue;
+        }
         if(ex.status==="Completed"){ continue; } // already done — leave it, never reopen or duplicate
         var need=(delivered&&ex.status!=="Completed")||(target&&target!==(""+(ex.target_etd||"")).slice(0,10));
         if(need){ var upd={target_etd:target,date_received:rec.date_received}; if(delivered) upd.status="Completed"; toUpdate.push({id:ex.id,upd:upd}); }
@@ -898,6 +910,7 @@ async function addHandover(){
     origin:isPort?($("f_origin").value||null):normCountry($("f_origin").value), destination:isPort?($("f_dest").value||null):normCountry($("f_dest").value),
     ops_owner:owner||null, status:status, collection_haulier:$("f_colhaul").value.trim()||null, delivery_haulier:$("f_delhaul").value.trim()||null,
     target_etd:$("f_eta").value||null, notes:$("f_notes").value.trim()||null };
+  if(isRyanair(rec.customer)) rec.board="ryanair";
   var r=await sb.from("handovers").insert(rec).select().single();
   if(r.error){ $("formMsg").style.color="#b00020"; $("formMsg").textContent="Error: "+r.error.message; return; }
   $("formMsg").style.color="var(--green)"; $("formMsg").textContent="Added "+(r.data.ref||"");
@@ -968,6 +981,7 @@ async function saveEdit(){
   if(!upd.own_ref){ toast("The "+ecfg.hdr+" is required."); var er=$("e_own_ref"); if(er) er.focus(); return; }
   if(ecfg.geo==="country"){ if(upd.origin) upd.origin=normCountry(upd.origin); if(upd.destination) upd.destination=normCountry(upd.destination); }
   if(upd.ops_owner&&upd.status==="New") upd.status="Assigned";
+  if(isRyanair(upd.customer)) upd.board="ryanair";
   var r=await sb.from("handovers").update(upd).eq("id",editId);
   if(r.error){ toast("Error: "+r.error.message); return; }
   closeEdit(); toast((upd.own_ref||it.customer)+" updated"); loadAll();
@@ -1016,6 +1030,7 @@ window.openDetail=function(id){ detailId=id; renderDetail(); $("drawer").classLi
 window.closeDetail=function(){ $("drawer").classList.remove("show"); $("drawerBg").classList.remove("show"); detailId=null; };
 window.moveBoard=async function(id,to){
   var it=allRows.find(function(x){return x.id===id;}); if(!it) return;
+  if(isRyanair(it.customer) && to!=="ryanair"){ toast("Ryanair jobs stay on the Ryanair board."); return; }
   if(!confirm("Move "+(it.own_ref||it.customer||"this shipment")+" to “"+BOARD_NAMES[to]+"”?")) return;
   var r=await sb.from("handovers").update({board:to}).eq("id",id);
   if(r.error){ toast("Error: "+r.error.message); return; }
