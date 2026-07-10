@@ -221,8 +221,8 @@
   <div id="viewBoard" style="display:none">
 
   <div class="addbar">
-    <h2 id="toggleForm"><span id="addLabel">+ Log a new handover</span> <span class="chev" id="chev">▲ hide</span></h2>
-    <div id="formWrap">
+    <h2 id="toggleForm"><span id="addLabel">+ Add</span> <span class="chev" id="chev">▼ show</span></h2>
+    <div id="formWrap" style="display:none">
       <div class="form-grid">
         <div class="field"><label id="lbl_ownref">QT no. — from Sales <span style="color:#c00000">*</span></label><input type="text" id="f_ownref" placeholder="Sales quotation (QT) number"></div>
         <div class="field"><label>File ref (IE)</label><input type="text" id="f_fileref" placeholder="IE / operations file ref"></div>
@@ -255,8 +255,7 @@
 
   <div class="panels">
     <div class="card"><h2>HANDOVERS BY STATUS</h2><div class="body" id="chartStatus"></div></div>
-    <div class="card"><h2>OPEN SHIPMENTS BY OWNER</h2><div class="body" id="chartOwner"></div></div>
-    <div class="card"><h2>THIS MONTH BY OWNER</h2><div class="body" id="chartMonthly"></div></div>
+    <div class="card"><h2 style="display:flex;justify-content:space-between;align-items:center;gap:8px">SHIPMENTS BY OWNER <select id="ownerMonth" style="width:auto;font-size:12px;font-weight:normal;color:#fff;background:rgba(0,0,0,.15);border:1px solid rgba(255,255,255,.4);border-radius:4px;padding:2px 6px"></select></h2><div class="body" id="chartOwner"></div></div>
   </div>
 
   <div class="toolbar">
@@ -528,19 +527,32 @@ function barChart(el,data,colorFn){
     return '<div class="bar-row"><div class="cat">'+esc(d.cat)+'</div><div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:'+colorFn(d)+'"></div></div><div class="bar-val">'+d.val+'</div></div>';
   }).join("");
 }
+function monthLabel(ym){ var p=(""+ym).split("-"); return new Date(+p[0],+p[1]-1,1).toLocaleDateString("en-IE",{month:"long",year:"numeric"}); }
+function monthsFrom(rows){ var m={}; rows.forEach(function(x){ var d=(""+(x.date_received||x.created_at||"")).slice(0,7); if(/^\d{4}-\d{2}$/.test(d)) m[d]=1; }); return Object.keys(m).sort().reverse(); }
+function ownerCounts(rows,month){
+  var o={};
+  rows.forEach(function(i){
+    if(month){ if((""+(i.date_received||i.created_at||"")).slice(0,7)!==month) return; }
+    else if((""+(i.status||"")).trim().toLowerCase()==="completed") return; // "Open now"
+    var k=i.ops_owner||"(unassigned)"; o[k]=(o[k]||0)+1;
+  });
+  var arr=Object.keys(o).map(function(k){return {cat:k,val:o[k]};}).sort(function(a,b){return b.val-a.val;});
+  return arr.length?arr:[{cat:"—",val:0}];
+}
+function populateMonthSel(sel,rows){
+  if(!sel) return; var val=sel.value, months=monthsFrom(rows);
+  sel.innerHTML='<option value="">Open now</option>'+months.map(function(m){return '<option value="'+m+'">'+esc(monthLabel(m))+'</option>';}).join("");
+  if(val&&months.indexOf(val)>=0) sel.value=val;
+}
+function renderOwnerChart(){
+  var sel=$("ownerMonth"), m=sel?sel.value:"";
+  barChart($("chartOwner"),ownerCounts(handovers,m),function(d){return d.cat==="(unassigned)"?"#c00000":(m?"var(--navy)":"var(--green-acc)");});
+}
 function charts(){
   var byStatus=STATUSES.map(function(s){return {cat:s,val:handovers.filter(function(i){return i.status===s;}).length};});
   barChart($("chartStatus"),byStatus,function(d){return STATUS_CLR[d.cat]?STATUS_CLR[d.cat][0]:"#ccc";});
-  var owners={};
-  handovers.forEach(function(i){ if(i.status!=="Completed"){ var k=i.ops_owner||"(unassigned)"; owners[k]=(owners[k]||0)+1; } });
-  var byOwner=Object.keys(owners).map(function(k){return {cat:k,val:owners[k]};}).sort(function(a,b){return b.val-a.val;});
-  if(!byOwner.length) byOwner=[{cat:"—",val:0}];
-  barChart($("chartOwner"),byOwner,function(d){return d.cat==="(unassigned)"?"#c00000":"var(--green-acc)";});
-  var ym=new Date().toISOString().slice(0,7), mo={};
-  handovers.forEach(function(i){ var d=(""+(i.date_received||i.created_at||"")).slice(0,7); if(d===ym){ var k=i.ops_owner||"(unassigned)"; mo[k]=(mo[k]||0)+1; } });
-  var byMonth=Object.keys(mo).map(function(k){return {cat:k,val:mo[k]};}).sort(function(a,b){return b.val-a.val;});
-  if(!byMonth.length) byMonth=[{cat:"—",val:0}];
-  barChart($("chartMonthly"),byMonth,function(d){return d.cat==="(unassigned)"?"#c00000":"var(--navy)";});
+  populateMonthSel($("ownerMonth"),handovers);
+  renderOwnerChart();
 }
 function refreshOwnerFilter(){
   var owners={}; handovers.forEach(function(i){ if(i.ops_owner) owners[i.ops_owner]=1; });
@@ -643,6 +655,7 @@ function tableRows(){
 }
 function renderAll(){ kpis(); charts(); refreshOwnerFilter(); refreshCustomerList(); tableRows(); if(currentView==="overview") renderOverview(); }
 var currentView="overview";
+var ovOwnerMonth="";
 window.showTab=function(t){
   var isOv=(t==="overview");
   currentView=isOv?"overview":"board";
@@ -705,33 +718,25 @@ function renderOverview(){
       : '<div style="padding:16px;color:var(--muted);font-size:13px">'+empty+'</div>';
     return '<div class="card"><h2>'+title+badge+'</h2><div class="body" style="padding:0">'+body+'</div></div>';
   }
-  var byOwner={}; active.forEach(function(x){ if(x.ops_owner) byOwner[x.ops_owner]=(byOwner[x.ops_owner]||0)+1; });
-  var owners=Object.keys(byOwner).sort(function(a,b){return byOwner[b]-byOwner[a];});
-  var maxO=owners.length?byOwner[owners[0]]:1;
-  var workload=owners.length? owners.map(function(o){
-    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:130px;font-size:12.5px">'+esc(o)+'</div>'+
-      '<div style="flex:1;background:#eef1f5;border-radius:5px;height:18px;overflow:hidden"><div style="width:'+Math.round(byOwner[o]/maxO*100)+'%;height:100%;background:var(--green-acc)"></div></div>'+
-      '<div style="width:26px;text-align:right;font-weight:bold;font-size:12.5px">'+byOwner[o]+'</div></div>';
-  }).join("") : '<div style="color:var(--muted);font-size:13px">No open shipments assigned.</div>';
-
-  var ym=new Date().toISOString().slice(0,7), mByO={};
-  allRows.forEach(function(x){ var d=(""+(x.date_received||x.created_at||"")).slice(0,7); if(d===ym){ var k=x.ops_owner||"(unassigned)"; mByO[k]=(mByO[k]||0)+1; } });
-  var mOwners=Object.keys(mByO).sort(function(a,b){return mByO[b]-mByO[a];});
-  var maxM=mOwners.length?mByO[mOwners[0]]:1;
-  var monthName=new Date().toLocaleDateString("en-IE",{month:"long",year:"numeric"});
-  var monthly=mOwners.length? mOwners.map(function(o){
-    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:130px;font-size:12.5px">'+esc(o)+'</div>'+
-      '<div style="flex:1;background:#eef1f5;border-radius:5px;height:18px;overflow:hidden"><div style="width:'+Math.round(mByO[o]/maxM*100)+'%;height:100%;background:var(--navy)"></div></div>'+
-      '<div style="width:26px;text-align:right;font-weight:bold;font-size:12.5px">'+mByO[o]+'</div></div>';
-  }).join("") : '<div style="color:var(--muted);font-size:13px">No shipments logged this month.</div>';
+  var monthOpts='<option value="">Open now</option>'+monthsFrom(allRows).map(function(m){return '<option value="'+m+'"'+(ovOwnerMonth===m?" selected":"")+'>'+esc(monthLabel(m))+'</option>';}).join("");
 
   $("viewOverview").innerHTML=
     strip+brk+
     listCard("Overdue",overdue,"#b00020","Nothing overdue — all on track.")+
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">'+
-      '<div class="card"><h2>Open shipments by owner</h2><div class="body">'+workload+'</div></div>'+
-      '<div class="card"><h2>'+esc(monthName)+' — total by owner (all modes)</h2><div class="body">'+monthly+'</div></div>'+
-    '</div>';
+    '<div class="card"><h2 style="display:flex;justify-content:space-between;align-items:center;gap:8px">Shipments by owner (all modes) '+
+      '<select id="ovOwnerMonth" style="width:auto;font-size:12px;font-weight:normal;color:#fff;background:rgba(0,0,0,.15);border:1px solid rgba(255,255,255,.4);border-radius:4px;padding:2px 6px">'+monthOpts+'</select></h2>'+
+      '<div class="body" id="ovOwnerBars"></div></div>';
+  var os=$("ovOwnerMonth"); if(os) os.onchange=function(){ ovOwnerMonth=this.value; renderOvOwner(); };
+  renderOvOwner();
+}
+function renderOvOwner(){
+  var arr=ownerCounts(allRows,ovOwnerMonth||"");
+  var max=Math.max.apply(null,arr.map(function(d){return d.val;}))||1;
+  $("ovOwnerBars").innerHTML=arr.map(function(d){
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:130px;font-size:12.5px">'+esc(d.cat)+'</div>'+
+      '<div style="flex:1;background:#eef1f5;border-radius:5px;height:18px;overflow:hidden"><div style="width:'+Math.round(d.val/max*100)+'%;height:100%;background:'+(d.cat==="(unassigned)"?"#c00000":(ovOwnerMonth?"var(--navy)":"var(--green-acc)"))+'"></div></div>'+
+      '<div style="width:26px;text-align:right;font-weight:bold;font-size:12.5px">'+d.val+'</div></div>';
+  }).join("");
 }
 window.switchBoard=function(b){
   if(!BOARDS[b]) return;
@@ -855,7 +860,9 @@ async function applyFMS(){
     toast("FMS import: +"+add.length+" added, "+fmsParsed.toUpdate.length+" updated");
     fmsParsed=null; $("fms_file").value=""; $("fms_preview").innerHTML="Done — refreshing…";
     if($("fHideDone")) $("fHideDone").checked=true;
-    loadAll();
+    await loadAll();
+    if($("fHideDone")) $("fHideDone").checked=true;
+    tableRows();
   }catch(e){ $("fms_preview").innerHTML='<span style="color:#b00020">Error: '+esc(e.message||e)+'</span>'; }
 }
 
@@ -864,6 +871,7 @@ function wireUi(){
   $("addBtn").onclick=addHandover;
   $("clearForm").onclick=clearForm;
   if($("fms_read")) $("fms_read").onclick=readFMS;
+  if($("ownerMonth")) $("ownerMonth").onchange=renderOwnerChart;
   ["search","fStatus","fOwner","fMode","fDir","fSales","fHideDone","fMine","meSelect"].forEach(function(id){ $(id).addEventListener("input",tableRows); $(id).addEventListener("change",tableRows); });
   $("fSales").innerHTML='<option value="">All sales</option>'+SALES.map(function(s){return '<option>'+esc(s)+'</option>';}).join("");
   $("meSelect").addEventListener("change",function(){ try{ localStorage.setItem("mw_me",this.value); }catch(e){} });
