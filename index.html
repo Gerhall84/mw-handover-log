@@ -850,8 +850,14 @@ async function readFMS(){
           toUpdate.push({id:ex.id,upd:mv}); continue;
         }
         if(ex.status==="Completed"){ continue; } // already done — leave it, never reopen or duplicate
-        var need=(delivered&&ex.status!=="Completed")||(target&&target!==(""+(ex.target_etd||"")).slice(0,10));
-        if(need){ var upd={target_etd:target,date_received:rec.date_received}; if(delivered) upd.status="Completed"; toUpdate.push({id:ex.id,upd:upd}); }
+        var etaChange = !ex.eta_manual && target && target!==(""+(ex.target_etd||"")).slice(0,10);
+        var deliv = delivered && ex.status!=="Completed";
+        if(etaChange || deliv){
+          var upd={};
+          if(etaChange){ upd.target_etd=target; upd.date_received=rec.date_received; }
+          if(deliv) upd.status="Completed";
+          toUpdate.push({id:ex.id,upd:upd});
+        }
       } else { rec.status=delivered?"Completed":"In Transit"; toAdd.push(rec); }
     }
     fmsParsed={toAdd:toAdd,toUpdate:toUpdate};
@@ -982,6 +988,7 @@ async function saveEdit(){
   if(ecfg.geo==="country"){ if(upd.origin) upd.origin=normCountry(upd.origin); if(upd.destination) upd.destination=normCountry(upd.destination); }
   if(upd.ops_owner&&upd.status==="New") upd.status="Assigned";
   if(isRyanair(upd.customer)) upd.board="ryanair";
+  if((upd.target_etd||"")!==(""+(it.target_etd||"")).slice(0,10)) upd.eta_manual=true;
   var r=await sb.from("handovers").update(upd).eq("id",editId);
   if(r.error){ toast("Error: "+r.error.message); return; }
   closeEdit(); toast((upd.own_ref||it.customer)+" updated"); loadAll();
@@ -1078,7 +1085,9 @@ window.dAddComment=async function(){
   var it=allRows.find(function(x){return x.id===detailId;}); var existing=(it&&it.comments)?it.comments:"";
   var r=await sb.from("handovers").update({comments:line+(existing?"\n"+existing:"")}).eq("id",detailId);
   if(r.error){ toast("Error: "+r.error.message); return; }
+  $("d_ctext").blur();
   await loadAll();
+  if(detailId) renderDetail();
 };
 
 /* export */
