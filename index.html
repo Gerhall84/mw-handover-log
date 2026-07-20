@@ -196,17 +196,19 @@
 </header>
 
 <div class="wrap">
-  <div class="board-tabs" style="flex-wrap:wrap">
+  <div class="board-tabs" style="flex-wrap:wrap;align-items:center">
     <button class="board-tab active" id="tabOverview" onclick="showTab('overview')">Manager Overview</button>
-    <button class="board-tab" id="tabHandover" onclick="showTab('handover')">BD Handovers</button>
-    <button class="board-tab" id="tabKeyacct" onclick="showTab('keyacct')">In-house Accounts</button>
-    <button class="board-tab" id="tabRyanair" onclick="showTab('ryanair')">Ryanair</button>
-    <button class="board-tab" id="tabOcean" onclick="showTab('ocean')">Ocean Imports</button>
-    <button class="board-tab" id="tabOcean_export" onclick="showTab('ocean_export')">Ocean Exports</button>
-    <button class="board-tab" id="tabAir_import" onclick="showTab('air_import')">Air Imports</button>
-    <button class="board-tab" id="tabAir_export" onclick="showTab('air_export')">Air Exports</button>
-    <button class="board-tab" id="tabRoad" onclick="showTab('road')">Road</button>
-    <button class="board-tab" id="tabCustoms" onclick="showTab('customs')">Customs</button>
+    <div id="boardTabsWrap" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+      <button class="board-tab" id="tabHandover" onclick="showTab('handover')">BD Handovers</button>
+      <button class="board-tab" id="tabKeyacct" onclick="showTab('keyacct')">In-house Accounts</button>
+      <button class="board-tab" id="tabRyanair" onclick="showTab('ryanair')">Ryanair</button>
+      <button class="board-tab" id="tabOcean" onclick="showTab('ocean')">Ocean Imports</button>
+      <button class="board-tab" id="tabOcean_export" onclick="showTab('ocean_export')">Ocean Exports</button>
+      <button class="board-tab" id="tabAir_import" onclick="showTab('air_import')">Air Imports</button>
+      <button class="board-tab" id="tabAir_export" onclick="showTab('air_export')">Air Exports</button>
+      <button class="board-tab" id="tabRoad" onclick="showTab('road')">Road</button>
+      <button class="board-tab" id="tabCustoms" onclick="showTab('customs')">Customs</button>
+    </div>
   </div>
   <div id="fmsCard" class="card" style="margin-bottom:14px">
     <h2>Import daily FMS file</h2>
@@ -261,6 +263,7 @@
 
   <div class="toolbar">
     <input class="search" type="text" id="search" placeholder="Search QT no., customer, description…">
+    <select id="fMonth" title="Month"></select>
     <select id="fStatus"><option value="">All statuses</option><option>New</option><option>Assigned</option><option>Booked</option><option>In Transit</option><option>Completed</option><option>On HOLD</option></select>
     <select id="fOwner"><option value="">All owners</option></select>
     <select id="fMode"><option value="">All modes</option><option>Air</option><option>Ocean</option><option>Road</option><option>Customs</option><option>Multi-modal</option></select>
@@ -533,21 +536,30 @@ function barChart(el,data,colorFn){
   }).join("");
 }
 function monthLabel(ym){ var p=(""+ym).split("-"); return new Date(+p[0],+p[1]-1,1).toLocaleDateString("en-IE",{month:"long",year:"numeric"}); }
-function monthsFrom(rows){ var m={}; rows.forEach(function(x){ var d=(""+(x.date_received||x.created_at||"")).slice(0,7); if(/^\d{4}-\d{2}$/.test(d)) m[d]=1; }); return Object.keys(m).sort().reverse(); }
+function curMonth(){ return new Date().toISOString().slice(0,7); }
+function rowMonth(x){ return (""+(x.date_received||x.created_at||"")).slice(0,7); }
+function inCurMonth(x){ return rowMonth(x)===curMonth(); }
+function monthsFrom(rows){ var m={}; rows.forEach(function(x){ var d=rowMonth(x); if(/^\d{4}-\d{2}$/.test(d)) m[d]=1; }); return Object.keys(m).sort().reverse(); }
+function monthOptions(rows,selected){
+  return '<option value="">Open — '+esc(monthLabel(curMonth()))+'</option>'+
+    '<option value="__all"'+(selected==="__all"?" selected":"")+'>All open (any month)</option>'+
+    monthsFrom(rows).map(function(m){return '<option value="'+m+'"'+(selected===m?" selected":"")+'>'+esc(monthLabel(m))+'</option>';}).join("");
+}
 function ownerCounts(rows,month){
-  var o={};
+  var o={}, done=function(x){ return (""+(x.status||"")).trim().toLowerCase()==="completed"; };
   rows.forEach(function(i){
-    if(month){ if((""+(i.date_received||i.created_at||"")).slice(0,7)!==month) return; }
-    else if((""+(i.status||"")).trim().toLowerCase()==="completed") return; // "Open now"
+    if(month==="__all"){ if(done(i)) return; }                       // all open, any month
+    else if(month){ if(rowMonth(i)!==month) return; }                // a specific month
+    else { if(done(i)||!inCurMonth(i)) return; }                     // open, current month
     var k=i.ops_owner||"(unassigned)"; o[k]=(o[k]||0)+1;
   });
   var arr=Object.keys(o).map(function(k){return {cat:k,val:o[k]};}).sort(function(a,b){return b.val-a.val;});
   return arr.length?arr:[{cat:"—",val:0}];
 }
 function populateMonthSel(sel,rows){
-  if(!sel) return; var val=sel.value, months=monthsFrom(rows);
-  sel.innerHTML='<option value="">Open now</option>'+months.map(function(m){return '<option value="'+m+'">'+esc(monthLabel(m))+'</option>';}).join("");
-  if(val&&months.indexOf(val)>=0) sel.value=val;
+  if(!sel) return; var val=sel.value;
+  sel.innerHTML=monthOptions(rows,val);
+  if(val) sel.value=val;
 }
 function renderOwnerChart(){
   var sel=$("ownerMonth"), m=sel?sel.value:"";
@@ -558,6 +570,13 @@ function charts(){
   barChart($("chartStatus"),byStatus,function(d){return STATUS_CLR[d.cat]?STATUS_CLR[d.cat][0]:"#ccc";});
   populateMonthSel($("ownerMonth"),handovers);
   renderOwnerChart();
+}
+function refreshMonthFilter(){
+  var sel=$("fMonth"); if(!sel) return; var cur=sel.value;
+  sel.innerHTML='<option value="">This month · '+esc(monthLabel(curMonth()))+'</option>'+
+    '<option value="__all">All months</option>'+
+    monthsFrom(handovers).map(function(m){return '<option value="'+m+'">'+esc(monthLabel(m))+'</option>';}).join("");
+  sel.value=cur||"";
 }
 function refreshOwnerFilter(){
   var owners={}; handovers.forEach(function(i){ if(i.ops_owner) owners[i.ops_owner]=1; });
@@ -604,7 +623,9 @@ window.bulkComplete=async function(){
 function tableRows(){
   var q=$("search").value.toLowerCase().trim(),fs=$("fStatus").value,fo=$("fOwner").value,fm=$("fMode").value,fd=$("fDir").value,fsl=$("fSales").value;
   var hideDone=$("fHideDone").checked, mine=$("fMine").checked, me=$("meSelect").value;
+  var fmo=$("fMonth")?$("fMonth").value:"__all";
   var list=handovers.filter(function(i){
+    if(fmo!=="__all"){ if(fmo){ if(rowMonth(i)!==fmo) return false; } else if(!inCurMonth(i)) return false; }
     if(fs&&i.status!==fs) return false;
     if(fo&&i.ops_owner!==fo) return false;
     if(fm&&i.mode!==fm) return false;
@@ -658,7 +679,7 @@ function tableRows(){
   updateBulkBar();
   var sa=$("selAll"); if(sa){ var boxes=document.querySelectorAll("#rows .rowsel"); sa.checked=boxes.length>0 && Object.keys(selectedIds).length>=boxes.length; }
 }
-function renderAll(){ kpis(); charts(); refreshOwnerFilter(); refreshCustomerList(); tableRows(); if(currentView==="overview") renderOverview(); }
+function renderAll(){ kpis(); charts(); refreshMonthFilter(); refreshOwnerFilter(); refreshCustomerList(); tableRows(); if(currentView==="overview") renderOverview(); }
 var currentView="overview";
 var ovOwnerMonth="";
 window.showTab=function(t){
@@ -677,29 +698,42 @@ function renderOverview(){
   var plus3=new Date(Date.now()+3*864e5).toISOString().slice(0,10);
   var dt=function(x){return x.target_etd?(""+x.target_etd).slice(0,10):"";};
   var isDone=function(x){ return (""+(x.status||"")).trim().toLowerCase()==="completed"; };
-  var active=allRows.filter(function(x){return !isDone(x);});
+  var inScope=function(x){
+    if(ovOwnerMonth==="__all") return true;
+    if(ovOwnerMonth) return rowMonth(x)===ovOwnerMonth;
+    return inCurMonth(x);
+  };
+  var scopeLabel=(ovOwnerMonth==="__all")?"All months":monthLabel(ovOwnerMonth||curMonth());
+  var active=allRows.filter(function(x){return !isDone(x) && inScope(x);});
   var dueSoon=active.filter(function(x){var t=dt(x);return t&&t>=today&&t<=plus3;}).sort(function(a,b){return dt(a)<dt(b)?-1:1;});
   var overdue=active.filter(function(x){var t=dt(x);return t&&t<today;}).sort(function(a,b){return dt(a)<dt(b)?-1:1;});
   var unassigned=active.filter(function(x){return !x.ops_owner;}).sort(function(a,b){return dt(a)<dt(b)?-1:1;});
 
   function calc(rows){
-    var open=rows.filter(function(x){return !isDone(x);});
+    var open=rows.filter(function(x){return !isDone(x) && inScope(x);});
     return { open:open.length,
       overdue:open.filter(function(x){var t=dt(x);return t&&t<today;}).length,
       due:open.filter(function(x){var t=dt(x);return t&&t>=today&&t<=plus3;}).length,
       unassigned:open.filter(function(x){return !x.ops_owner;}).length };
   }
   var all=calc(allRows);
+  var earlier=(ovOwnerMonth?0:allRows.filter(function(x){return !isDone(x) && !inCurMonth(x);}).length);
 
   // combined status strip
   function tile(n,l,c){ return '<div style="text-align:center;flex:1;min-width:90px"><div style="font-size:30px;font-weight:bold;color:'+(n&&c?c:"var(--navy)")+'">'+n+'</div><div style="font-size:10.5px;letter-spacing:.5px;color:var(--muted)">'+l+'</div></div>'; }
-  var strip='<div class="card" style="margin-bottom:14px"><div class="body"><div style="display:flex;gap:8px;flex-wrap:wrap">'+
+  var strip='<div class="card" style="margin-bottom:14px"><div class="body">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'+
+      '<div style="font-size:11.5px;color:var(--muted);font-weight:bold">SHOWING: '+esc(scopeLabel).toUpperCase()+
+        (earlier?' <span style="color:#b7791f">· '+earlier+' still open from earlier months</span>':'')+'</div>'+
+      '<select id="ovOwnerMonth" style="width:auto;font-size:12px">'+monthOptions(allRows,ovOwnerMonth)+'</select>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
     tile(all.open,"OPEN")+tile(all.overdue,"OVERDUE","#b00020")+tile(all.due,"DUE ≤3 DAYS","#b7791f")+tile(all.unassigned,"UNASSIGNED","#c00000")+
     '</div></div></div>';
 
   // per-board breakdown
   function cell(n,c){ return '<td style="text-align:center;font-weight:bold;color:'+(n&&c?c:"var(--navy)")+'">'+n+'</td>'; }
-  var brk='<div class="card" style="margin-bottom:14px"><h2>By board</h2><div class="body" style="padding:0"><table>'+
+  var brk='<div class="card" style="margin-bottom:14px"><h2>By board · '+esc(scopeLabel)+'</h2><div class="body" style="padding:0"><table>'+
     '<thead><tr><th>Board</th><th style="text-align:center">Open</th><th style="text-align:center">Overdue</th><th style="text-align:center">Due ≤3d</th><th style="text-align:center">Unassigned</th></tr></thead><tbody>'+
     Object.keys(BOARD_NAMES).map(function(b){
       var s=calc(allRows.filter(function(x){return (x.board||"handover")===b;}));
@@ -723,15 +757,13 @@ function renderOverview(){
       : '<div style="padding:16px;color:var(--muted);font-size:13px">'+empty+'</div>';
     return '<div class="card"><h2>'+title+badge+'</h2><div class="body" style="padding:0">'+body+'</div></div>';
   }
-  var monthOpts='<option value="">Open now</option>'+monthsFrom(allRows).map(function(m){return '<option value="'+m+'"'+(ovOwnerMonth===m?" selected":"")+'>'+esc(monthLabel(m))+'</option>';}).join("");
 
   $("viewOverview").innerHTML=
     strip+brk+
-    listCard("Overdue",overdue,"#b00020","Nothing overdue — all on track.")+
-    '<div class="card"><h2 style="display:flex;justify-content:space-between;align-items:center;gap:8px">Shipments by owner (all modes) '+
-      '<select id="ovOwnerMonth" style="width:auto;font-size:12px;font-weight:normal;color:#fff;background:rgba(0,0,0,.15);border:1px solid rgba(255,255,255,.4);border-radius:4px;padding:2px 6px">'+monthOpts+'</select></h2>'+
+    listCard("Overdue · "+esc(scopeLabel),overdue,"#b00020","Nothing overdue — all on track.")+
+    '<div class="card"><h2>Shipments by owner (all modes) · '+esc(scopeLabel)+'</h2>'+
       '<div class="body" id="ovOwnerBars"></div></div>';
-  var os=$("ovOwnerMonth"); if(os) os.onchange=function(){ ovOwnerMonth=this.value; renderOvOwner(); };
+  var os=$("ovOwnerMonth"); if(os) os.onchange=function(){ ovOwnerMonth=this.value; renderOverview(); };
   renderOvOwner();
 }
 function renderOvOwner(){
@@ -890,7 +922,7 @@ function wireUi(){
   $("clearForm").onclick=clearForm;
   if($("fms_read")) $("fms_read").onclick=readFMS;
   if($("ownerMonth")) $("ownerMonth").onchange=renderOwnerChart;
-  ["search","fStatus","fOwner","fMode","fDir","fSales","fHideDone","fMine","meSelect"].forEach(function(id){ $(id).addEventListener("input",tableRows); $(id).addEventListener("change",tableRows); });
+  ["search","fMonth","fStatus","fOwner","fMode","fDir","fSales","fHideDone","fMine","meSelect"].forEach(function(id){ $(id).addEventListener("input",tableRows); $(id).addEventListener("change",tableRows); });
   $("fSales").innerHTML='<option value="">All sales</option>'+SALES.map(function(s){return '<option>'+esc(s)+'</option>';}).join("");
   $("meSelect").addEventListener("change",function(){ try{ localStorage.setItem("mw_me",this.value); }catch(e){} });
   $("toggleForm").onclick=function(){ var w=$("formWrap"),hid=w.style.display==="none"; w.style.display=hid?"block":"none"; $("chev").textContent=hid?"▲ hide":"▼ show"; };
