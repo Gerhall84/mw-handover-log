@@ -792,8 +792,8 @@ window.switchBoard=function(b){
   handovers=allRows.filter(function(x){return (x.board||"handover")===currentBoard;});
   renderAll();
 };
-function targetLabel(b){ return b==="ocean_export" ? "Laden ex IE" : "Target / ETD"; }
-function targetHdr(b){ return b==="ocean_export" ? "Laden ex IE" : "Target"; }
+function targetLabel(b){ return b==="ocean_export" ? "Laden ex IE" : (b==="air_export" ? "Departure ex IE" : "Target / ETD"); }
+function targetHdr(b){ return b==="ocean_export" ? "Laden ex IE" : (b==="air_export" ? "Departure" : "Target"); }
 function applyBoardForm(b){
   var cfg=BOARD_CFG[b]||BOARD_CFG.handover;
   $("lbl_ownref").innerHTML=cfg.ref+' <span style="color:#c00000">*</span>';
@@ -872,8 +872,8 @@ async function readFMS(){
       var isRya=RYA_RE.test(party);
       var board=isRya?"ryanair":fmsBoard(type,dir);
       var delivered=!!(r[iDel]&&(""+r[iDel]).trim());
-      var target=(board==="ocean_export")
-        ? (fmsDate(r[iDep2])||fmsDate(r[iEtd])||fmsDate(r[iEta]))   // Ocean exports: laden date ex Ireland (Departure)
+      var target=(board==="ocean_export"||board==="air_export")
+        ? (fmsDate(r[iDep2])||fmsDate(r[iEtd])||fmsDate(r[iEta]))   // exports: date it departs Ireland (Departure) first
         : (fmsDate(r[iEta])||fmsDate(r[iEtd])||fmsDate(r[iDep2]));
       var isExport=(""+dir).toLowerCase()==="export";
       var rec={ file_ref:num, own_ref:(""+(r[iMawb]||"")).trim()||num, board:board,
