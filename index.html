@@ -243,7 +243,7 @@
         <div class="field" id="fld_dest"><label>Destination (country)</label><input type="text" id="f_dest" class="country-ac" autocomplete="off" placeholder="Type code or country"></div>
 
         <div class="field"><label>OPS owner (operator)</label><select id="f_owner"></select></div>
-        <div class="field"><label>Target / ETD</label><input type="date" id="f_eta"></div>
+        <div class="field"><label id="lbl_eta">Target / ETD</label><input type="date" id="f_eta"></div>
         <div class="field"><label>Collection haulier</label><input type="text" id="f_colhaul" list="haulierList" placeholder="Who collects"></div>
         <div class="field"><label>Delivery haulier</label><input type="text" id="f_delhaul" list="haulierList" placeholder="Who delivers"></div>
         <div class="field col2"><label>Notes</label><input type="text" id="f_notes"></div>
@@ -294,7 +294,7 @@
         <th class="sortable" onclick="sortBy('ops_owner')">OPS owner<span class="srt" data-k="ops_owner"></span></th>
         <th class="sortable" onclick="sortBy('status')">Status<span class="srt" data-k="status"></span></th>
         <th>Comments</th>
-        <th class="sortable" onclick="sortBy('target_etd')">Target<span class="srt" data-k="target_etd"></span></th>
+        <th class="sortable" onclick="sortBy('target_etd')"><span id="hdr_target">Target</span><span class="srt" data-k="target_etd"></span></th>
         <th></th>
       </tr></thead>
       <tbody id="rows"></tbody>
@@ -792,11 +792,15 @@ window.switchBoard=function(b){
   handovers=allRows.filter(function(x){return (x.board||"handover")===currentBoard;});
   renderAll();
 };
+function targetLabel(b){ return b==="ocean_export" ? "Laden ex IE" : "Target / ETD"; }
+function targetHdr(b){ return b==="ocean_export" ? "Laden ex IE" : "Target"; }
 function applyBoardForm(b){
   var cfg=BOARD_CFG[b]||BOARD_CFG.handover;
   $("lbl_ownref").innerHTML=cfg.ref+' <span style="color:#c00000">*</span>';
   $("f_ownref").placeholder=cfg.refPh;
   if($("hdr_ownref")) $("hdr_ownref").textContent=cfg.hdr;
+  if($("lbl_eta")) $("lbl_eta").textContent=targetLabel(b);
+  if($("hdr_target")) $("hdr_target").textContent=targetHdr(b);
   $("fld_mode").style.display=cfg.mode?"none":"";
   $("fld_direction").style.display=cfg.dir?"none":"";
   $("fld_ctype").style.display=cfg.ctype?"":"none";
@@ -868,7 +872,9 @@ async function readFMS(){
       var isRya=RYA_RE.test(party);
       var board=isRya?"ryanair":fmsBoard(type,dir);
       var delivered=!!(r[iDel]&&(""+r[iDel]).trim());
-      var target=fmsDate(r[iEta])||fmsDate(r[iEtd])||fmsDate(r[iDep2]);
+      var target=(board==="ocean_export")
+        ? (fmsDate(r[iDep2])||fmsDate(r[iEtd])||fmsDate(r[iEta]))   // Ocean exports: laden date ex Ireland (Departure)
+        : (fmsDate(r[iEta])||fmsDate(r[iEtd])||fmsDate(r[iDep2]));
       var isExport=(""+dir).toLowerCase()==="export";
       var rec={ file_ref:num, own_ref:(""+(r[iMawb]||"")).trim()||num, board:board,
         mode:fmsMode(type), direction:fmsDir(dir),
@@ -988,7 +994,7 @@ function fieldsFor(b){
   if(cfg.geo==="port-in"){ f.push(["origin","Departure port","port-world",1],["destination","Arrival port (Ireland)","port-ie",1]); }
   else if(cfg.geo==="port-out"){ f.push(["origin","Departure port (Ireland)","port-ie",1],["destination","Arrival port","port-world",1]); }
   else { f.push(["origin","Origin (country)","country",1],["destination","Destination (country)","country",1]); }
-  f.push(["ops_owner","OPS owner","sel-owner",1],["target_etd","Target / ETD","date",1],["collection_haulier","Collection haulier","haulier",1],["delivery_haulier","Delivery haulier","haulier",1],["notes","Notes","text",2]);
+  f.push(["ops_owner","OPS owner","sel-owner",1],["target_etd",targetLabel(b),"date",1],["collection_haulier","Collection haulier","haulier",1],["delivery_haulier","Delivery haulier","haulier",1],["notes","Notes","text",2]);
   return f;
 }
 window.openEdit=function(id){
@@ -1095,7 +1101,7 @@ function renderDetail(){
   }).join("");
   var html='<div class="detail-grid"><div style="grid-column:1/3">'+statusSelect(i)+'</div>'+
     fld("Customer",i.customer)+fld("Sales",i.sales_contact)+
-    fld("Received",fmtDate(i.date_received))+fld("Target / ETD",fmtDate(i.target_etd))+
+    fld("Received",fmtDate(i.date_received))+fld(targetLabel(bd),fmtDate(i.target_etd))+
     midCells+ownerCell+extraRoute+'</div>'+
     '<div class="dl" style="margin-top:6px">Description</div><div class="dv">'+(i.description?esc(i.description):"—")+'</div>'+
     '<div class="dl" style="margin-top:6px">Notes</div><div class="dv">'+(i.notes?esc(i.notes):"—")+'</div>'+
