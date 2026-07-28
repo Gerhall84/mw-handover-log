@@ -95,6 +95,9 @@
   tbody tr.unassigned{background:#fbe3e3 !important}
   tbody tr.unassigned td{color:var(--new-t)}
   tbody tr.overdue{background:#f8cbcb !important}
+  tbody tr.stale{background:#d6e4f5 !important}
+  tbody tr.stale td{color:#1f4e8c}
+  tbody tr.stale td:first-child{border-left:3px solid #2f5aa8}
   tbody tr.overdue td{color:#7a0010}
   tbody tr.overdue td:first-child{border-left:3px solid #b00020}
   tbody tr.duesoon{background:#fdecc8 !important}
@@ -273,6 +276,7 @@
     <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="fMine">Mine only</label>
     <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="fHideDone">Hide completed</label>
     <button class="btn btn-green btn-sm" id="bulkDone" onclick="bulkComplete()" disabled>✓ Complete selected (0)</button>
+    <select id="bulkMove" class="btn-sm" style="font-family:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:5px;padding:6px 8px;background:#fff;color:var(--navy)" onchange="bulkMove(this.value)" disabled><option value="">Move selected to…</option></select>
     <span class="count-note" id="countNote"></span>
   </div>
 
@@ -537,7 +541,7 @@ function barChart(el,data,colorFn){
 }
 function monthLabel(ym){ var p=(""+ym).split("-"); return new Date(+p[0],+p[1]-1,1).toLocaleDateString("en-IE",{month:"long",year:"numeric"}); }
 function curMonth(){ return new Date().toISOString().slice(0,7); }
-function rowMonth(x){ return (""+(x.date_received||x.created_at||"")).slice(0,7); }
+function rowMonth(x){ return (""+(x.target_etd||x.date_received||x.created_at||"")).slice(0,7); }
 function inCurMonth(x){ return rowMonth(x)===curMonth(); }
 function monthsFrom(rows){ var m={}; rows.forEach(function(x){ var d=rowMonth(x); if(/^\d{4}-\d{2}$/.test(d)) m[d]=1; }); return Object.keys(m).sort().reverse(); }
 function monthOptions(rows,selected){
@@ -612,7 +616,25 @@ window.toggleSelAll=function(cb){
 function updateBulkBar(){
   var n=Object.keys(selectedIds).length, b=$("bulkDone");
   if(b){ b.textContent="✓ Complete selected ("+n+")"; b.disabled=n===0; }
+  var m=$("bulkMove");
+  if(m){
+    if(m.options.length<=1){ m.innerHTML='<option value="">Move selected to…</option>'+Object.keys(BOARD_NAMES).map(function(k){return '<option value="'+k+'">Move to '+esc(BOARD_NAMES[k])+'</option>';}).join(""); }
+    m.disabled=n===0; m.value="";
+  }
 }
+window.bulkMove=async function(to){
+  var m=$("bulkMove"); if(!to){ return; }
+  var rows=allRows.filter(function(x){return selectedIds[x.id];});
+  if(!rows.length){ if(m) m.value=""; return; }
+  var blocked=rows.filter(function(x){return isRyanair(x.customer) && to!=="ryanair";});
+  var movable=rows.filter(function(x){return !(isRyanair(x.customer) && to!=="ryanair");}).map(function(x){return x.id;});
+  if(!movable.length){ toast("Ryanair jobs stay on the Ryanair board."); if(m) m.value=""; return; }
+  var msg="Move "+movable.length+" shipment"+(movable.length>1?"s":"")+" to \u201c"+BOARD_NAMES[to]+"\u201d?"+(blocked.length?("\n\n"+blocked.length+" Ryanair job"+(blocked.length>1?"s":"")+" will be left in place."):"");
+  if(!confirm(msg)){ if(m) m.value=""; return; }
+  var r=await sb.from("handovers").update({board:to}).in("id",movable);
+  if(r.error){ toast("Error: "+r.error.message); if(m) m.value=""; return; }
+  selectedIds={}; toast(movable.length+" moved to "+BOARD_NAMES[to]); loadAll();
+};
 window.bulkComplete=async function(){
   var ids=Object.keys(selectedIds); if(!ids.length) return;
   if(!confirm("Mark "+ids.length+" shipment"+(ids.length>1?"s":"")+" as Completed?")) return;
@@ -649,11 +671,13 @@ function tableRows(){
     var clr=STATUS_CLR[i.status]||["#eee","#333"];
     var todayS=new Date().toISOString().slice(0,10);
     var plus1=new Date(Date.now()+864e5).toISOString().slice(0,10);
+    var mAgo=new Date(); mAgo.setMonth(mAgo.getMonth()-1); var monthAgoS=mAgo.toISOString().slice(0,10);
     var tgt=i.target_etd?(""+i.target_etd).slice(0,10):"";
     var isDone=(""+(i.status||"")).trim().toLowerCase()==="completed";
-    var overdue=tgt && tgt<todayS && !isDone;
-    var dueSoon=!overdue && tgt && tgt>=todayS && tgt<=plus1 && !isDone;
-    var cls=(!i.ops_owner?"unassigned":"")+(i.status==="Completed"?" completed":"")+(overdue?" overdue":"")+(dueSoon?" duesoon":"");
+    var stale=!isDone && (!tgt || tgt<monthAgoS);
+    var overdue=!stale && tgt && tgt<todayS && !isDone;
+    var dueSoon=!stale && !overdue && tgt && tgt>=todayS && tgt<=plus1 && !isDone;
+    var cls=(!i.ops_owner?"unassigned":"")+(i.status==="Completed"?" completed":"")+(stale?" stale":"")+(overdue?" overdue":"")+(dueSoon?" duesoon":"");
     var route=(i.origin||"")+(i.origin&&i.destination?" → ":"")+(i.destination||"");
     var cn=commentCount(i.comments); var cmtTxt=cn?(cn+(cn===1?" note":" notes")):"+ add";
     return '<tr class="'+cls+'">'+
@@ -669,7 +693,7 @@ function tableRows(){
       '<td title="'+esc(i.ops_owner||"")+'">'+(i.ops_owner?esc(i.ops_owner):'<span style="color:#c00000;font-weight:bold">— none —</span>')+'</td>'+
       '<td>'+statusSelect(i)+'</td>'+
       '<td><span class="task-chip" onclick="openComments(\''+i.id+'\')">'+cmtTxt+'</span></td>'+
-      '<td'+(overdue?' style="color:#b00020;font-weight:bold"':(dueSoon?' style="color:#8a5a00;font-weight:bold"':''))+'>'+fmtDate(i.target_etd)+(overdue?' · overdue':(dueSoon?' · due soon':''))+'</td>'+
+      '<td'+(stale?' style="color:#1f4e8c;font-weight:bold"':(overdue?' style="color:#b00020;font-weight:bold"':(dueSoon?' style="color:#8a5a00;font-weight:bold"':'')))+'>'+(i.target_etd?fmtDate(i.target_etd):'<span style="color:#1f4e8c">no date</span>')+(stale&&tgt?' · &gt;1 month':(overdue?' · overdue':(dueSoon?' · due soon':'')))+'</td>'+
       '<td class="row-actions">'+
       '<button class="btn btn-light btn-sm" style="border:1px solid var(--line)" onclick="openEdit(\''+i.id+'\')">Edit</button>'+
       '<button class="btn btn-danger btn-sm" onclick="delItem(\''+i.id+'\')">Del</button></td></tr>';
@@ -792,8 +816,18 @@ window.switchBoard=function(b){
   handovers=allRows.filter(function(x){return (x.board||"handover")===currentBoard;});
   renderAll();
 };
-function targetLabel(b){ return b==="ocean_export" ? "Laden ex IE" : (b==="air_export" ? "Departure ex IE" : "Target / ETD"); }
-function targetHdr(b){ return b==="ocean_export" ? "Laden ex IE" : (b==="air_export" ? "Departure" : "Target"); }
+function targetLabel(b){
+  if(b==="ocean_export") return "Laden ex IE";
+  if(b==="air_export") return "Departure ex IE";
+  if(b==="ocean"||b==="air_import") return "Arrival (ETA)";
+  return "Target / ETD";
+}
+function targetHdr(b){
+  if(b==="ocean_export") return "Laden ex IE";
+  if(b==="air_export") return "Departure";
+  if(b==="ocean"||b==="air_import") return "Arrival";
+  return "Target";
+}
 function applyBoardForm(b){
   var cfg=BOARD_CFG[b]||BOARD_CFG.handover;
   $("lbl_ownref").innerHTML=cfg.ref+' <span style="color:#c00000">*</span>';
@@ -883,11 +917,11 @@ async function readFMS(){
         date_received:fmsDate(r[iDate]), target_etd:target, ops_owner:owner };
       var ex=existing[num];
       if(ex){
+        if((""+(ex.status||"")).trim().toLowerCase()==="completed"){ continue; } // completed on the board — re-upload never touches it
         if(isRya && (ex.board||"handover")!=="ryanair"){ // Ryanair precedence — always move onto the Ryanair board
-          var mv={board:"ryanair"}; if(delivered && ex.status!=="Completed") mv.status="Completed";
+          var mv={board:"ryanair"}; if(delivered) mv.status="Completed";
           toUpdate.push({id:ex.id,upd:mv}); continue;
         }
-        if(ex.status==="Completed"){ continue; } // already done — leave it, never reopen or duplicate
         var etaChange = !ex.eta_manual && target && target!==(""+(ex.target_etd||"")).slice(0,10);
         var deliv = delivered && ex.status!=="Completed";
         if(etaChange || deliv){
